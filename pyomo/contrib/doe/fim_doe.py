@@ -65,6 +65,7 @@ import time
 import pickle
 from itertools import permutations, product
 from pyomo.contrib.sensitivity_toolbox.sens import sipopt, sensitivity_calculation, get_dsdp
+import copy
 
 class Measurements:
     def __init__(self, measurement_index_time, variance=None, ind_string='_index_'):
@@ -471,12 +472,15 @@ class DesignOfExperiments:
 
         # identify measurements involved in calculation
         if jac_involved_measurement is not None:
-            self.jac_involved_name = jac_involved_measurement.flatten_measure_name.copy()
-            self.timepoint_overall_set = jac_involved_measurement.timepoint_overall_set.copy()
+            #self.jac_involved_name = jac_involved_measurement.flatten_measure_name.copy()
+            self.jac_involved_name = copy.deepcopy(jac_involved_measurement.flatten_measure_name)
+            #self.timepoint_overall_set = jac_involved_measurement.timepoint_overall_set.copy()
+            self.timepoint_overall_set = copy.deepcopy(jac_involved_measurement.timepoint_overall_set)
         else:
-            self.jac_involved_name = self.flatten_measure_name.copy()
-            self.timepoint_overall_set = self.measure.timepoint_overall_set.copy()
-            
+            #self.jac_involved_name = self.flatten_measure_name.copy()
+            self.jac_involved_name = copy.deepcopy(self.flatten_measure_name)
+            #self.timepoint_overall_set = self.measure.timepoint_overall_set.copy()
+            self.timepoint_overall_set = copy.deepcopy(self.measure.timepoint_overall_set)
 
         # check if inputs are valid
         # simultaneous mode does not need to check mode and dimension of design variables
@@ -919,7 +923,8 @@ class DesignOfExperiments:
             # Check if measurement time points are in this time set
             # Also correct the measurement time points
             # For e.g. if a measurement time point is 0.0 in the model but is given as 0, it is corrected here
-            measurement_accurate_time = self.flatten_measure_timeset.copy()
+            #measurement_accurate_time = self.flatten_measure_timeset.copy()
+            measurement_accurate_time = copy.deepcopy(self.flatten_measure_timeset)
             for j in self.flatten_measure_name:
                 for no_t, tt in enumerate(self.flatten_measure_timeset[j]):
                     if tt not in t_all:
@@ -1240,7 +1245,8 @@ class DesignOfExperiments:
         for design_set_iter in search_design_set:
             # generate the design variable dictionary needed for running compute_FIM
             # first copy value from design_Values
-            design_iter = design_values.copy()
+            #design_iter = design_values.copy()
+            design_iter = copy.deepcopy(design_values)
 
             # update the controlled value of certain time points for certain design variables
             for i in range(grid_dimension):
@@ -1729,7 +1735,8 @@ class DesignOfExperiments:
         perturb: which parameter to perturb
         '''
         # model parameters perturbation, backward disturb
-        param_backward = self.param_value.copy()
+        #param_backward = self.param_value.copy()
+        param_backward = copy.deepcopy(self.param_value)
         # perturb parameter
         param_backward[perturb] *= (1-self.step)
 
@@ -1929,7 +1936,8 @@ class Scenario_generator:
         scena = {}
         # generate a dict, keys are scenario number, values are a list of parameter values in this scenario
         for i, name in enumerate(scena_keys):
-            scenario = para_nominal.copy()
+            #scenario = para_nominal.copy()
+            scenario = copy.deepcopy(para_nominal)
 
             if formula == 'central':
                 # scenario 0 to #_of_para-1 are forward perturbed
