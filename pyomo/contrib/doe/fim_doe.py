@@ -60,6 +60,7 @@ from pyomo.common.dependencies import (
 
 from pyomo.environ import *
 from pyomo.dae import *
+from mpisppy.opt import ef, sc
 #import pandas as pd
 import time
 import pickle
@@ -561,7 +562,7 @@ class DesignOfExperiments:
             return analysis_square
 
     def compute_FIM(self, design_values, mode='sequential_finite', FIM_store_name=None, specified_prior=None,
-                    tee_opt=True, scale_nominal_param_value=False, scale_constant_value=1,
+                    tee_opt=True, scale_nominal_param_value=True, scale_constant_value=1,
                     store_output = None, read_output=None, extract_single_model=None,
                     formula='central', step=0.001,
                     objective_option='det'):
@@ -626,7 +627,9 @@ class DesignOfExperiments:
             # if using sequential model
             # call generator function to get scenario dictionary
             scena_gen = Scenario_generator(self.param_init, formula=self.formula, step=self.step)
-            scena_gen.generate_sequential_para()
+            #scena_gen.generate_sequential_para()
+            scena_set = scena_gen.simultaneous_scenario()
+            self.scena_set = scena_set
 
             # if measurements are provided
             if read_output is not None:
@@ -645,51 +648,78 @@ class DesignOfExperiments:
                 time_allbuild = []
                 time_allsolve = []
                 # loop over each scenario
-                for no_s in (scena_gen.scena_keys):
+                #for no_s in (scena_gen.scena_keys):
 
-                    scenario_iter = scena_gen.next_sequential_scenario(no_s)
-                    #print('This scenario:', scenario_iter)
-                    # create the model
-                    # TODO:(long term) add options to create model once and then update. only try this after the
-                    # package is completed and unitest is finished
-                    time0_build = time.time()
-                    mod = self.create_model(scenario_iter, args=self.args)
-                    time1_build = time.time()
-                    time_allbuild.append(time1_build-time0_build)
+                #scenario_iter = scena_gen.next_sequential_scenario(no_s)
+                #print('This scenario:', scenario_iter)
+                # create the model
+                # TODO:(long term) add options to create model once and then update. only try this after the
+                # package is completed and unitest is finished
+                #time0_build = time.time()
+                #mod = self.create_model(args=self.args)
+                #time1_build = time.time()
+                #time_allbuild.append(time1_build-time0_build)
 
-                    # discretize if needed
+                # discretize if needed
+                #if self.discretize_model is not None:
+                #    mod = self.discretize_model(mod)
+
+                # extract (discretized) time
+                time_set = []
+                for t in mod.t:
+                    time_set.append(value(t))
+
+                # create EF object
+                options = {"solver": 'ipopt'}
+                all_scenario_names = scena_set['scena_name']
+                #scenario_creator = self.__ef_scenario_creator(scena_set)
+
+                def scenario_creator(self, scena_name):
+
+                    para_scenario = self.__recover_scena_parameter(scena_name)
+
+                    model = self.create_model(args=self.args)
+
                     if self.discretize_model is not None:
-                        mod = self.discretize_model(mod)
+                        model = self.discretize_model(model)
 
-                    # extract (discretized) time
-                    time_set = []
-                    for t in mod.t:
-                        time_set.append(value(t))
+                    design_var_list = self.__design_var_generator()
+                    sputils.attach_root_node(model, model.aim, design_var_list)
 
-                    # solve model
-                    time0_solve = time.time()
-                    square_result = self.__solve_doe(mod, fix=True)
-                    time1_solve = time.time()
-                    time_allsolve.append(time1_solve-time0_solve)
-                    models.append(mod)
+                    model._mpisppy_probability = 1/len(all_scenario_names)
 
-                    if extract_single_model is not None:
-                        mod_name = store_output + str(no_s) + '.csv'
-                        dataframe = extract_single_model(mod, square_result)
-                        dataframe.to_csv(mod_name)
+                    if scenario_name == 0:
+                        self.__ef_fix_model()
 
-                    # loop over measurement item and time to store model measurements
-                    output_iter = []
+                    return model
 
-                    for j in self.flatten_measure_name:
-                        for t in self.flatten_measure_timeset[j]:
-                            measure_string_name = self.measure.SP_measure_name(j,t,mode='sequential_finite')
-                            C_value = value(eval(measure_string_name))
-                            output_iter.append(C_value)
+                ef_object = ef.ExtensiveForm(options, all_scenario_names, scenario_creator)
 
-                    output_record[no_s] = output_iter
+                # solve model
+                time0_solve = time.time()
+                #square_result = self.__solve_doe(mod, fix=True)
+                square_result = self.__solve_doe_ef(ef_object)
+                time1_solve = time.time()
+                time_allsolve.append(time1_solve-time0_solve)
+                models.append(mod)
 
-                    #print('Output this time: ', output_record[no_s])
+                if extract_single_model is not None:
+                    mod_name = store_output + str(no_s) + '.csv'
+                    dataframe = extract_single_model(mod, square_result)
+                    dataframe.to_csv(mod_name)
+
+                # loop over measurement item and time to store model measurements
+                output_iter = []
+
+                for j in self.flatten_measure_name:
+                    for t in self.flatten_measure_timeset[j]:
+                        measure_string_name = self.measure.SP_measure_name(j,t,mode='sequential_finite')
+                        C_value = value(eval(measure_string_name))
+                        output_iter.append(C_value)
+
+                output_record[no_s] = output_iter
+
+                #print('Output this time: ', output_record[no_s])
 
                 output_record['design'] = design_values
                 if store_output is not None:
@@ -1693,6 +1723,26 @@ class DesignOfExperiments:
                     newvar.unfix()
         return m
 
+    def __design_var_generator(self):
+
+        dv_list = []
+        for d, dname in enumerate(self.design_name):
+            # if design variables are indexed by time
+            if self.design_time[d] is not None:
+                for t, time in enumerate(self.design_time[d]):
+                    newvar = eval('m.' + dname + '[' + str(time) + ']')
+                    fix_v = design_val[dname][time]
+                    dv_list.append(fix_v)
+            else:
+                newvar = eval('m.' + dname)
+                fix_v = design_val[dname][0]
+
+                dv_list.append(fix_v)
+        return m
+
+    def __ef_fix_model(self):
+
+
     def __get_default_ipopt_solver(self):
         ''' Default solver
         '''
@@ -1701,6 +1751,37 @@ class DesignOfExperiments:
         solver.options['halt_on_ampl_error'] = 'yes'
         solver.options['max_iter'] = 3000
         return solver
+
+    def __recover_scena_paramete(self, scena_name):
+        para_list = []
+
+        for name in self.param_name:
+            para_list.append(self.scena_set[name][scena_name])
+
+        return para_list
+
+    def __ef_scenario_creator(self, scenario_name):
+        # for loop for parameters
+        no_scenario = len(scenario_name)
+
+        for i in scenario_name:
+            if scenario_name == str(i):
+                para = []
+            else:
+                raise ValueError("Extensive form scenario creation failed!!!")
+
+        model = self.create_model()
+
+        if self.discretize_model:
+            model = self.discretize_model(model)
+
+        sputils.attach_root_node(model, model.aim, self.design_value())
+
+        model._mpisppy_probability = 1/no_scenario
+
+        self.__ef_fix_model()
+
+        return model
 
     def __solve_doe(self, m, fix=False, opt_option=None):
         '''Solve DOE model.
@@ -1723,6 +1804,10 @@ class DesignOfExperiments:
         solver_result = self.solver.solve(mod,tee=self.tee_opt)
 
         return solver_result
+
+    def __solve_doe_ef(self, ef):
+        results = ef.solve_extensive_form(tee=self.tee_opt)
+        return results
 
     def __add_parameter(self, m, perturb=0):
         '''
@@ -2560,11 +2645,11 @@ class Grid_Search_Result:
             y_range_ME = self.figure_result_data['ME'].values.tolist()
 
         # Draw A-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
         #plt.rcParams.update(params)
@@ -2572,15 +2657,15 @@ class Grid_Search_Result:
         ax.scatter(x_range, y_range_A)
         ax.set_ylabel('$log_{10}$ Trace')
         ax.set_xlabel(xlabel_text)
-        plt.title(title_text + ' - A optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - A optimality')
+        plt.pyplot.show()
 
         # Draw D-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
         # plt.rcParams.update(params)
@@ -2588,15 +2673,15 @@ class Grid_Search_Result:
         ax.scatter(x_range, y_range_D)
         ax.set_ylabel('$log_{10}$ Determinant')
         ax.set_xlabel(xlabel_text)
-        plt.title(title_text + ' - D optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - D optimality')
+        plt.pyplot.show()
 
         # Draw E-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
         # plt.rcParams.update(params)
@@ -2604,15 +2689,15 @@ class Grid_Search_Result:
         ax.scatter(x_range, y_range_E)
         ax.set_ylabel('$log_{10}$ Minimal eigenvalue')
         ax.set_xlabel(xlabel_text)
-        plt.title(title_text + ' - E optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - E optimality')
+        plt.pyplot.show()
 
         # Draw Modified E-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
         # plt.rcParams.update(params)
@@ -2620,8 +2705,8 @@ class Grid_Search_Result:
         ax.scatter(x_range, y_range_ME)
         ax.set_ylabel('$log_{10}$ Condition number')
         ax.set_xlabel(xlabel_text)
-        plt.title(title_text + ' - Modified E optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - Modified E optimality')
+        plt.pyplot.show()
 
     def __heatmap(self, title_text, xlabel_text, ylabel_text, font_axes=16, font_tick=14, log_scale=True):
         '''
@@ -2688,88 +2773,88 @@ class Grid_Search_Result:
         yLabel = y_range
 
         # A-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
-        plt.rcParams.update(params)
+        plt.pyplot.rcParams.update(params)
         ax.set_yticks(range(len(yLabel)))
         ax.set_yticklabels(yLabel)
         ax.set_ylabel(ylabel_text)
         ax.set_xticks(range(len(xLabel)))
         ax.set_xticklabels(xLabel)
         ax.set_xlabel(xlabel_text)
-        im = ax.imshow(hes_a.T, cmap=plt.cm.hot_r)
-        ba = plt.colorbar(im)
+        im = ax.imshow(hes_a.T, cmap=plt.pyplot.cm.hot_r)
+        ba = plt.pyplot.colorbar(im)
         ba.set_label('log10(trace(FIM))')
-        plt.title(title_text + ' - A optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - A optimality')
+        plt.pyplot.show()
 
         # D-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
-        plt.rcParams.update(params)
+        plt.pyplot.rcParams.update(params)
         ax.set_yticks(range(len(yLabel)))
         ax.set_yticklabels(yLabel)
         ax.set_ylabel(ylabel_text)
         ax.set_xticks(range(len(xLabel)))
         ax.set_xticklabels(xLabel)
         ax.set_xlabel(xlabel_text)
-        im = ax.imshow(hes_d.T, cmap=plt.cm.hot_r)
-        ba = plt.colorbar(im)
+        im = ax.imshow(hes_d.T, cmap=plt.pyplot.cm.hot_r)
+        ba = plt.pyplot.colorbar(im)
         ba.set_label('log10(det(FIM))')
-        plt.title(title_text + ' - D optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - D optimality')
+        plt.pyplot.show()
 
         # E-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
-        plt.rcParams.update(params)
+        plt.pyplot.rcParams.update(params)
         ax.set_yticks(range(len(yLabel)))
         ax.set_yticklabels(yLabel)
         ax.set_ylabel(ylabel_text)
         ax.set_xticks(range(len(xLabel)))
         ax.set_xticklabels(xLabel)
         ax.set_xlabel(xlabel_text)
-        im = ax.imshow(hes_e.T, cmap=plt.cm.hot_r)
-        ba = plt.colorbar(im)
+        im = ax.imshow(hes_e.T, cmap=plt.pyplot.cm.hot_r)
+        ba = plt.pyplot.colorbar(im)
         ba.set_label('log10(minimal eig(FIM))')
-        plt.title(title_text + ' - E optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - E optimality')
+        plt.pyplot.show()
 
         # modified E-optimality
-        fig = plt.figure()
-        plt.rc('axes', titlesize=font_axes)
-        plt.rc('axes', labelsize=font_axes)
-        plt.rc('xtick', labelsize=font_tick)
-        plt.rc('ytick', labelsize=font_tick)
+        fig = plt.pyplot.figure()
+        plt.pyplot.rc('axes', titlesize=font_axes)
+        plt.pyplot.rc('axes', labelsize=font_axes)
+        plt.pyplot.rc('xtick', labelsize=font_tick)
+        plt.pyplot.rc('ytick', labelsize=font_tick)
         ax = fig.add_subplot(111)
         params = {'mathtext.default': 'regular'}
-        plt.rcParams.update(params)
+        plt.pyplot.rcParams.update(params)
         ax.set_yticks(range(len(yLabel)))
         ax.set_yticklabels(yLabel)
         ax.set_ylabel(ylabel_text)
         ax.set_xticks(range(len(xLabel)))
         ax.set_xticklabels(xLabel)
         ax.set_xlabel(xlabel_text)
-        im = ax.imshow(hes_e2.T, cmap=plt.cm.hot_r)
-        ba = plt.colorbar(im)
+        im = ax.imshow(hes_e2.T, cmap=plt.pyplot.cm.hot_r)
+        ba = plt.pyplot.colorbar(im)
         ba.set_label('log10(cond(FIM))')
-        plt.title(title_text + ' - Modified E-optimality')
-        plt.show()
+        plt.pyplot.title(title_text + ' - Modified E-optimality')
+        plt.pyplot.show()
 
     
 
