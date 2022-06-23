@@ -61,6 +61,7 @@ from pyomo.common.dependencies import (
 from pyomo.environ import *
 from pyomo.dae import *
 from mpisppy.opt import ef, sc
+import mpisppy.utils.sputils as sputils
 #import pandas as pd
 import time
 import pickle
@@ -630,6 +631,7 @@ class DesignOfExperiments:
             #scena_gen.generate_sequential_para()
             scena_set = scena_gen.simultaneous_scenario()
             self.scena_set = scena_set
+            print(self.scena_set)
 
             # if measurements are provided
             if read_output is not None:
@@ -665,35 +667,17 @@ class DesignOfExperiments:
                 #    mod = self.discretize_model(mod)
 
                 # extract (discretized) time
-                time_set = []
-                for t in mod.t:
-                    time_set.append(value(t))
+
+                #time_set = []
+                #for t in mod.t:
+                #    time_set.append(value(t))
 
                 # create EF object
                 options = {"solver": 'ipopt'}
-                all_scenario_names = scena_set['scena_name']
+                all_scenario_names = self.scena_set['scena-name-str']
                 #scenario_creator = self.__ef_scenario_creator(scena_set)
 
-                def scenario_creator(self, scena_name):
-
-                    para_scenario = self.__recover_scena_parameter(scena_name)
-
-                    model = self.create_model(args=self.args)
-
-                    if self.discretize_model is not None:
-                        model = self.discretize_model(model)
-
-                    design_var_list = self.__design_var_generator()
-                    sputils.attach_root_node(model, model.aim, design_var_list)
-
-                    model._mpisppy_probability = 1/len(all_scenario_names)
-
-                    if scenario_name == 0:
-                        self.__ef_fix_model()
-
-                    return model
-
-                ef_object = ef.ExtensiveForm(options, all_scenario_names, scenario_creator)
+                ef_object = ef.ExtensiveForm(options, all_scenario_names, self.scenario_creator)
 
                 # solve model
                 time0_solve = time.time()
@@ -702,6 +686,8 @@ class DesignOfExperiments:
                 time1_solve = time.time()
                 time_allsolve.append(time1_solve-time0_solve)
                 models.append(mod)
+
+                print('Solution:', square_result.solution)
 
                 if extract_single_model is not None:
                     mod_name = store_output + str(no_s) + '.csv'
@@ -1067,6 +1053,49 @@ class DesignOfExperiments:
 
         else:
             raise ValueError('This is not a valid mode. Choose from "sequential_finite", "simultaneous_finite", "sequential_sipopt", "sequential_kaug"')
+
+    def scenario_creator(self, scena_name):
+
+        # para_scenario = self.__recover_scena_parameter(scena_name)
+        para_list = []
+
+        for name in self.param_name:
+            para_list.append(self.scena_set[name][int(scena_name)])
+
+        model = self.create_model(para_list, args=self.args)
+
+        if self.discretize_model is not None:
+            model = self.discretize_model(model)
+
+        design_var_list = self.__design_var_generator(model, self.design_values)
+
+        sputils.attach_root_node(model, model.aim, design_var_list)
+
+        model._mpisppy_probability = 1 / len(self.scena_set['scena-name'])
+
+        if scena_name == str(0):
+            self.__ef_fix_model(model, self.design_values)
+
+        return model
+
+    def __ef_fix_model(self, model, design_val):
+
+        for d, dname in enumerate(self.design_name):
+            # if design variables are indexed by time
+            if self.design_time[d] is not None:
+                for t, time in enumerate(self.design_time[d]):
+                    newvar = eval('model.' + dname + '[' + str(time) + ']')
+                    fix_v = design_val[dname][time]
+                    newvar.fix(fix_v)
+                    # print(newvar, 'is fixed at ', fix_v)
+            else:
+                newvar = eval('model.' + dname)
+                fix_v = design_val[dname][0]
+
+                newvar.fix(fix_v)
+                # print(newvar, 'is fixed at ', fix_v)
+
+        return model
 
     def __finite_calculation(self, output_record, scena_gen):
         '''
@@ -1723,24 +1752,22 @@ class DesignOfExperiments:
                     newvar.unfix()
         return m
 
-    def __design_var_generator(self):
+    def __design_var_generator(self, model, design_val):
 
         dv_list = []
         for d, dname in enumerate(self.design_name):
             # if design variables are indexed by time
             if self.design_time[d] is not None:
                 for t, time in enumerate(self.design_time[d]):
-                    newvar = eval('m.' + dname + '[' + str(time) + ']')
-                    fix_v = design_val[dname][time]
-                    dv_list.append(fix_v)
+                    newvar = eval('model.' + dname + '[' + str(time) + ']')
+                    #fix_v = design_val[dname][time]
+                    dv_list.append(newvar)
             else:
-                newvar = eval('m.' + dname)
-                fix_v = design_val[dname][0]
+                newvar = eval('model.' + dname)
+                #fix_v = design_val[dname][0]
 
-                dv_list.append(fix_v)
-        return m
-
-    def __ef_fix_model(self):
+                dv_list.append(newvar)
+        return dv_list
 
 
     def __get_default_ipopt_solver(self):
@@ -1779,7 +1806,23 @@ class DesignOfExperiments:
 
         model._mpisppy_probability = 1/no_scenario
 
-        self.__ef_fix_model()
+        if scenario_name == 0:
+
+            for d, dname in enumerate(self.design_name):
+                # if design variables are indexed by time
+                if self.design_time[d] is not None:
+                    for t, time in enumerate(self.design_time[d]):
+                        newvar = eval('model.' + dname + '[' + str(time) + ']')
+                        fix_v = design_val[dname][time]
+                        newvar.fix(fix_v)
+                        # print(newvar, 'is fixed at ', fix_v)
+                else:
+                    newvar = eval('m.' + dname)
+                    fix_v = design_val[dname][0]
+
+                    newvar.fix(fix_v)
+                    # print(newvar, 'is fixed at ', fix_v)
+            return m
 
         return model
 
@@ -2133,6 +2176,12 @@ class Scenario_data:
         scenario_dict['jac-index'] = jac_index
         scenario_dict['eps-abs'] = eps_abs
         scenario_dict['scena-name'] = self.scena_keys
+
+        string_scenario_name = []
+        for i in scenario_dict['scena-name']:
+            string_scenario_name.append(str(i))
+
+        scenario_dict['scena-name-str'] = string_scenario_name
 
         # print('Return scenario dict as:', scenario_dict)
         return scenario_dict
