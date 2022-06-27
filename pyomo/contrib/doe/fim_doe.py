@@ -220,12 +220,12 @@ class Measurements:
                 measure_index = mname.split(self.ind_string)[1]
                 for tim in self.flatten_measure_timeset[mname]:
                     # get the measurement name in the model
-                    measurement_name = measure_name + '[0,' + measure_index + ',' + str(tim) + ']'
+                    measurement_name = measure_name + '[' + measure_index + ',' + str(tim) + ']'
                     measurement_names.append(measurement_name)
             else:
                 for tim in self.flatten_measure_timeset[mname]:
                     # get the measurement name in the model
-                    measurement_name = mname + '[0,' + str(tim) + ']'
+                    measurement_name = mname + '[' + str(tim) + ']'
                     measurement_names.append(measurement_name)
         self.model_measure_name = measurement_names
 
@@ -271,9 +271,9 @@ class Measurements:
                 if type(self.name_and_index[measure_name][0]) is str:
                     measure_index = '"' + measure_index + '"'
                 if t in self.flatten_measure_timeset[j]:
-                    string_name = 'mod.' + measure_name + '[0,' + str((measure_index)) + ',' + str(t) + ']'
+                    string_name = 'mod.' + measure_name + '['+str((measure_index)) + ',' + str(t) + ']'
             else:
-                string_name = 'mod.' + j + '[0,' + str(t) + ']'
+                string_name = 'mod.' + j + '[' + str(t) + ']'
 
             return string_name
 
@@ -685,7 +685,7 @@ class DesignOfExperiments:
                 square_result = self.__solve_doe_ef(ef_object)
                 time1_solve = time.time()
                 time_allsolve.append(time1_solve-time0_solve)
-                models.append(mod)
+                #models.append(mod)
 
                 print('Solution:', square_result.solution)
 
@@ -918,6 +918,7 @@ class DesignOfExperiments:
             scena_gen = Scenario_generator(self.param_init, formula=None, step=self.step)
             scenario_all = scena_gen.simultaneous_scenario()
 
+            print(scenario_all)
             # create model
             time0_build = time.time()
             mod = self.create_model(scenario_all, args=self.args)
@@ -955,7 +956,8 @@ class DesignOfExperiments:
 
             # set ub and lb to parameters
             for par in self.param_name:
-                component = eval('mod.'+par+'[0]')
+                #component = eval('mod.'+par+'[0]')
+                component = eval('mod.'+par)
                 component.setlb(self.param_init[par])
                 component.setub(self.param_init[par])
 
@@ -963,8 +965,8 @@ class DesignOfExperiments:
             var_name = []
             var_dict = {}
             for name in self.param_name:
-                var_name.append(name+'[0]')
-                var_dict[name+'[0]'] = self.param_init[name]
+                var_name.append(name)
+                var_dict[name] = self.param_init[name]
 
             # call k_aug get_dsdp function
             time0_solve = time.time()
@@ -996,6 +998,9 @@ class DesignOfExperiments:
                 if self.discretize_model is not None:
                     # for DAE model, some variables are fixed
                     try:
+                    #if measurement_name == 'C[0,CA,0]':
+                    #    dsdp_extract.append(zero_sens)
+                    #else:
                         kaug_no = col.index(measurement_name)
                         measurement_index.append(kaug_no)
                         # get right line of dsdp
@@ -1063,6 +1068,9 @@ class DesignOfExperiments:
             para_list.append(self.scena_set[name][int(scena_name)])
 
         model = self.create_model(para_list, args=self.args)
+
+        # add objective function
+        model.Obj = Objective(expr=0, sense=minimize)
 
         if self.discretize_model is not None:
             model = self.discretize_model(model)
