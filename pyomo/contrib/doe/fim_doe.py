@@ -211,7 +211,8 @@ class Measurements:
         '''Return pyomo string name 
         '''
         # store pyomo string name
-        measurement_names = []
+        measurement_names_ef = []
+        measurement_names_kaug = []
         # loop over measurement name
         for mname in self.flatten_measure_name:
             # check if there is extra index
@@ -220,14 +221,19 @@ class Measurements:
                 measure_index = mname.split(self.ind_string)[1]
                 for tim in self.flatten_measure_timeset[mname]:
                     # get the measurement name in the model
-                    measurement_name = measure_name + '[' + measure_index + ',' + str(tim) + ']'
-                    measurement_names.append(measurement_name)
+                    measurement_name_kaug = measure_name + '[' + measure_index + ',' + str(tim) + ']'
+                    measurement_name_ef = measure_name + "['" + measure_index + "'," + str(tim) + "]"
+                    measurement_names_ef.append(measurement_name_ef)
+                    measurement_names_kaug.append(measurement_name_kaug)
+
             else:
                 for tim in self.flatten_measure_timeset[mname]:
                     # get the measurement name in the model
                     measurement_name = mname + '[' + str(tim) + ']'
-                    measurement_names.append(measurement_name)
-        self.model_measure_name = measurement_names
+                    measurement_names_ef.append(measurement_name)
+                    measurement_names_kaug.append(measurement_name)
+        self.model_measure_name_ef = measurement_names_ef
+        self.model_measure_name_kaug = measurement_name_kaug
 
     def SP_measure_name(self, j, t,scenario_all=None, p=None, mode=None, legal_t=True):
         '''Return pyomo string name for different modes
@@ -628,7 +634,7 @@ class DesignOfExperiments:
             # if using sequential model
             # call generator function to get scenario dictionary
             scena_gen = Scenario_generator(self.param_init, formula=self.formula, step=self.step)
-            #scena_gen.generate_sequential_para()
+            scena_gen.generate_sequential_para()
             scena_set = scena_gen.simultaneous_scenario()
             self.scena_set = scena_set
             print(self.scena_set)
@@ -675,37 +681,48 @@ class DesignOfExperiments:
                 # create EF object
                 options = {"solver": 'ipopt'}
                 all_scenario_names = self.scena_set['scena-name-str']
-                #scenario_creator = self.__ef_scenario_creator(scena_set)
 
                 ef_object = ef.ExtensiveForm(options, all_scenario_names, self.scenario_creator)
 
                 # solve model
                 time0_solve = time.time()
-                #square_result = self.__solve_doe(mod, fix=True)
+
                 square_result = self.__solve_doe_ef(ef_object)
                 time1_solve = time.time()
                 time_allsolve.append(time1_solve-time0_solve)
-                #models.append(mod)
 
-                print('Solution:', square_result.solution)
 
-                if extract_single_model is not None:
-                    mod_name = store_output + str(no_s) + '.csv'
-                    dataframe = extract_single_model(mod, square_result)
-                    dataframe.to_csv(mod_name)
+                #if extract_single_model is not None:
+                #    mod_name = store_output + str(no_s) + '.csv'
+                #    dataframe = extract_single_model(mod, square_result)
+                #    dataframe.to_csv(mod_name)
 
-                # loop over measurement item and time to store model measurements
-                output_iter = []
 
-                for j in self.flatten_measure_name:
-                    for t in self.flatten_measure_timeset[j]:
-                        measure_string_name = self.measure.SP_measure_name(j,t,mode='sequential_finite')
-                        C_value = value(eval(measure_string_name))
-                        output_iter.append(C_value)
 
-                output_record[no_s] = output_iter
+                counter = 0
 
-                #print('Output this time: ', output_record[no_s])
+                all_measurement_name = self.measure.model_measure_name_ef
+                print('name:', all_measurement_name)
+
+                for scenario_name, scenario_instance in ef_object.local_scenarios.items():
+                    # loop over measurement item and time to store model measurements
+                    output_iter = []
+
+                    for nam in all_measurement_name:
+                        name_eval = eval("scenario_instance."+nam+'.value')
+                        output_iter.append(name_eval)
+
+                #for no_s in (scena_gen.scena_keys):
+                #    for j in self.flatten_measure_name:
+                #        for t in self.flatten_measure_timeset[j]:
+                            #measure_string_name = self.measure.SP_measure_name(j,t,mode='sequential_finite')
+                #            C_value = value(eval(measure_string_name))
+                #            output_iter.append(C_value)
+
+                    output_record[counter] = output_iter
+                    print('Output this time: ', output_record[counter])
+                    counter += 1
+                    print(counter)
 
                 output_record['design'] = design_values
                 if store_output is not None:
@@ -993,12 +1010,12 @@ class DesignOfExperiments:
             zero_sens = np.zeros(len(self.param_name))
 
             # loop over measurement variables and their time points
-            for measurement_name in self.measure.model_measure_name:
+            for measurement_name in self.measure.model_measure_name_kaug:
                 # get right line number in kaug results
                 if self.discretize_model is not None:
                     # for DAE model, some variables are fixed
                     try:
-                    #if measurement_name == 'C[0,CA,0]':
+                    #if measurement_name == 'C[CA,0]':
                     #    dsdp_extract.append(zero_sens)
                     #else:
                         kaug_no = col.index(measurement_name)
@@ -1125,12 +1142,16 @@ class DesignOfExperiments:
         for no_p, para in enumerate(self.param_name):
             # extract involved scenario No. for each parameter from scenario class
             involved_s = scena_gen.scenario_para[para]
+            #print('involveds:', involved_s)
 
             # each parameter has two involved scenarios
             s1 = involved_s[0]
             s2 = involved_s[1]
+            #print('s1:', s1)
+            #print('s2:', s2)
             list_jac = []
             for i in range(len(output_record[s1])):
+                #print('i:', i)
                 if self.scale_nominal_param_value:
                     sensi = (output_record[s1][i] - output_record[s2][i]) / scena_gen.eps_abs[para] * self.param_init[para] * self.scale_constant_value
                 else:
