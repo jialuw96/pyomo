@@ -222,9 +222,11 @@ class Measurements:
                 for tim in self.flatten_measure_timeset[mname]:
                     # get the measurement name in the model
                     measurement_name_kaug = measure_name + '[' + measure_index + ',' + str(tim) + ']'
+                    measurement_names_kaug.append(measurement_name_kaug)
+
                     measurement_name_ef = measure_name + "['" + measure_index + "'," + str(tim) + "]"
                     measurement_names_ef.append(measurement_name_ef)
-                    measurement_names_kaug.append(measurement_name_kaug)
+
 
             else:
                 for tim in self.flatten_measure_timeset[mname]:
@@ -233,7 +235,7 @@ class Measurements:
                     measurement_names_ef.append(measurement_name)
                     measurement_names_kaug.append(measurement_name)
         self.model_measure_name_ef = measurement_names_ef
-        self.model_measure_name_kaug = measurement_name_kaug
+        self.model_measure_name_kaug = measurement_names_kaug
 
     def SP_measure_name(self, j, t,scenario_all=None, p=None, mode=None, legal_t=True):
         '''Return pyomo string name for different modes
@@ -1012,6 +1014,7 @@ class DesignOfExperiments:
             # loop over measurement variables and their time points
             for measurement_name in self.measure.model_measure_name_kaug:
                 # get right line number in kaug results
+                print('name:', measurement_name)
                 if self.discretize_model is not None:
                     # for DAE model, some variables are fixed
                     try:
