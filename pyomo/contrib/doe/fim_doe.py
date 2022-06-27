@@ -1071,6 +1071,7 @@ class DesignOfExperiments:
 
         # add objective function
         model.Obj = Objective(expr=0, sense=minimize)
+        model.aim = Expression(rule=0)
 
         if self.discretize_model is not None:
             model = self.discretize_model(model)

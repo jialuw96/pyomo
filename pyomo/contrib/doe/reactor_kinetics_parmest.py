@@ -61,14 +61,18 @@ def disc_for_measure(m, NFE=32):
     return m 
 
 
-def create_model(parameter, const=False, controls={0: 300, 0.125: 300, 0.25: 300, 0.375: 300, 0.5: 300, 0.625: 300, 0.75: 300, 0.875: 300, 1: 300}, 
-                     t_range=[0.0,1], CA_init=1, C_init=0.1, model_form='dae-index-1', args=[True]):
+def create_model(parameter, controls={0: 300, 0.125: 300, 0.25: 300, 0.375: 300, 0.5: 300, 0.625: 300, 0.75: 300, 0.875: 300, 1: 300}, 
+                     t_range=[0.0,1], CA_init=1, C_init=0.1, args=[True]):
     '''
     This is an example user model provided to DoE library. 
     It is a dynamic problem solved by Pyomo.DAE.
+    For a create_model function for Pyomo.DOE: 
+        1. The first argument should be parameter; 
+        2. No objective function should be defined. 
     
     Arguments
     ---------
+    parameter: a list of parameters
     Controlled time-dependent design variable:
         - controls: a Dict, keys are control timepoints, values are the controlled T at that timepoint
     t_range: time range, h 
@@ -76,7 +80,6 @@ def create_model(parameter, const=False, controls={0: 300, 0.125: 300, 0.25: 300
         - CA_init: CA0 value
     CA_init: An initial value for CA
     C_init: An initial value for C
-    model_form: choose from 'ode-index-0' and 'dae-index-1'
     args: a list, deciding if the model is for k_aug or not. If [False], it is for k_aug, the parameters are defined as Var instead of Param.
         
     Return
@@ -96,16 +99,6 @@ def create_model(parameter, const=False, controls={0: 300, 0.125: 300, 0.25: 300
     m.CA_init = CA_init
     m.para_list = para_list
     t_control = list(controls.keys())
-    
-    #m.scena_all = scena 
-    #m.scena = Set(initialize=scena['scena-name'])
-    
-    if model_form == 'ode-index-0':
-        m.index1 = False
-    elif model_form == 'dae-index-1':
-        m.index1 = True 
-    else:
-        raise ValueError('Please choose from "ode-index-0" and "dae-index-1"')
     
     # timepoints
     m.t = ContinuousSet(bounds=(t_range[0], t_range[1]))
@@ -223,11 +216,6 @@ def create_model(parameter, const=False, controls={0: 300, 0.125: 300, 0.25: 300
         t: time
         '''
         return m.C['CA',t] + m.C['CB',t] + m.C['CC', t] == m.CA0[0]
-    
-    def obj_rule(m):
-        return 0
-    
-    #m.Obj = Objective(rule=obj_rule, sense=maximize)
         
         
     # Control time
@@ -240,7 +228,7 @@ def create_model(parameter, const=False, controls={0: 300, 0.125: 300, 0.25: 300
 
     m.alge_rule = Constraint(m.t, rule=alge)
     
-    m.aim = Expression(rule=0)
+    
     
 
     # B.C. 
