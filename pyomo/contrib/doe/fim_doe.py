@@ -208,7 +208,10 @@ class Measurements:
         self.flatten_measure_timeset = flatten_measure_timeset
 
     def __model_measure_name(self):
-        '''Return pyomo string name 
+        '''Return pyomo string name
+        Need two sets of model name for sequential_finite and direct_kaug
+        When the extra index is a string, such as 'CA', k_aug asks the name to be 'C[CA,0]', while extensive form asks to be "C['CA',0]".
+        TODO: when the extra index is a number, extensive form doesn't need extra quotes. Need to find a way to identify if the extra index is a number.
         '''
         # store pyomo string name
         measurement_names_ef = []
@@ -219,6 +222,7 @@ class Measurements:
             if self.ind_string in mname:
                 measure_name = mname.split(self.ind_string)[0]
                 measure_index = mname.split(self.ind_string)[1]
+
                 for tim in self.flatten_measure_timeset[mname]:
                     # get the measurement name in the model
                     measurement_name_kaug = measure_name + '[' + measure_index + ',' + str(tim) + ']'
@@ -657,28 +661,6 @@ class DesignOfExperiments:
                 models = []
                 time_allbuild = []
                 time_allsolve = []
-                # loop over each scenario
-                #for no_s in (scena_gen.scena_keys):
-
-                #scenario_iter = scena_gen.next_sequential_scenario(no_s)
-                #print('This scenario:', scenario_iter)
-                # create the model
-                # TODO:(long term) add options to create model once and then update. only try this after the
-                # package is completed and unitest is finished
-                #time0_build = time.time()
-                #mod = self.create_model(args=self.args)
-                #time1_build = time.time()
-                #time_allbuild.append(time1_build-time0_build)
-
-                # discretize if needed
-                #if self.discretize_model is not None:
-                #    mod = self.discretize_model(mod)
-
-                # extract (discretized) time
-
-                #time_set = []
-                #for t in mod.t:
-                #    time_set.append(value(t))
 
                 # create EF object
                 options = {"solver": 'ipopt'}
@@ -694,37 +676,30 @@ class DesignOfExperiments:
                 time_allsolve.append(time1_solve-time0_solve)
 
 
-                #if extract_single_model is not None:
+                # TODO: check and activate this storing data function
+                # if extract_single_model is not None:
                 #    mod_name = store_output + str(no_s) + '.csv'
                 #    dataframe = extract_single_model(mod, square_result)
                 #    dataframe.to_csv(mod_name)
 
-
-
+                # count scenario
                 counter = 0
-
+                # get all measurement names
                 all_measurement_name = self.measure.model_measure_name_ef
-                print('name:', all_measurement_name)
 
+                # loop over scenarios
                 for scenario_name, scenario_instance in ef_object.local_scenarios.items():
-                    # loop over measurement item and time to store model measurements
+                    # store model outputs for this scenario
                     output_iter = []
 
                     for nam in all_measurement_name:
                         name_eval = eval("scenario_instance."+nam+'.value')
                         output_iter.append(name_eval)
 
-                #for no_s in (scena_gen.scena_keys):
-                #    for j in self.flatten_measure_name:
-                #        for t in self.flatten_measure_timeset[j]:
-                            #measure_string_name = self.measure.SP_measure_name(j,t,mode='sequential_finite')
-                #            C_value = value(eval(measure_string_name))
-                #            output_iter.append(C_value)
-
+                    # record the output of this scenario
                     output_record[counter] = output_iter
-                    print('Output this time: ', output_record[counter])
+                    #print('Output this time: ', output_record[counter])
                     counter += 1
-                    print(counter)
 
                 output_record['design'] = design_values
                 if store_output is not None:
@@ -1080,13 +1055,18 @@ class DesignOfExperiments:
             raise ValueError('This is not a valid mode. Choose from "sequential_finite", "simultaneous_finite", "sequential_sipopt", "sequential_kaug"')
 
     def scenario_creator(self, scena_name):
+        '''Scenario creator function for extensive form.
 
-        # para_scenario = self.__recover_scena_parameter(scena_name)
+        :param scena_name: the name of one specific scenario
+        :return: the model under this scenario
+        '''
+
+        # assign parameters for scenario
         para_list = []
-
         for name in self.param_name:
             para_list.append(self.scena_set[name][int(scena_name)])
 
+        # create model
         model = self.create_model(para_list, args=self.args)
 
         # add objective function
@@ -1095,18 +1075,23 @@ class DesignOfExperiments:
         if self.discretize_model is not None:
             model = self.discretize_model(model)
 
+        # get design vector
         design_var_list = self.__design_var_generator(model, self.design_values)
 
         sputils.attach_root_node(model, model.aim, design_var_list)
 
+        # add probability
         model._mpisppy_probability = 1 / len(self.scena_set['scena-name'])
 
+        # fix variables for solving square problems
         if scena_name == str(0):
             self.__ef_fix_model(model, self.design_values)
 
         return model
 
     def __ef_fix_model(self, model, design_val):
+        ''' Fix model design variables for square problem
+        '''
 
         for d, dname in enumerate(self.design_name):
             # if design variables are indexed by time
@@ -1115,13 +1100,11 @@ class DesignOfExperiments:
                     newvar = eval('model.' + dname + '[' + str(time) + ']')
                     fix_v = design_val[dname][time]
                     newvar.fix(fix_v)
-                    # print(newvar, 'is fixed at ', fix_v)
             else:
                 newvar = eval('model.' + dname)
                 fix_v = design_val[dname][0]
 
                 newvar.fix(fix_v)
-                # print(newvar, 'is fixed at ', fix_v)
 
         return model
 
@@ -1818,45 +1801,6 @@ class DesignOfExperiments:
             para_list.append(self.scena_set[name][scena_name])
 
         return para_list
-
-    def __ef_scenario_creator(self, scenario_name):
-        # for loop for parameters
-        no_scenario = len(scenario_name)
-
-        for i in scenario_name:
-            if scenario_name == str(i):
-                para = []
-            else:
-                raise ValueError("Extensive form scenario creation failed!!!")
-
-        model = self.create_model()
-
-        if self.discretize_model:
-            model = self.discretize_model(model)
-
-        sputils.attach_root_node(model, model.aim, self.design_value())
-
-        model._mpisppy_probability = 1/no_scenario
-
-        if scenario_name == 0:
-
-            for d, dname in enumerate(self.design_name):
-                # if design variables are indexed by time
-                if self.design_time[d] is not None:
-                    for t, time in enumerate(self.design_time[d]):
-                        newvar = eval('model.' + dname + '[' + str(time) + ']')
-                        fix_v = design_val[dname][time]
-                        newvar.fix(fix_v)
-                        # print(newvar, 'is fixed at ', fix_v)
-                else:
-                    newvar = eval('m.' + dname)
-                    fix_v = design_val[dname][0]
-
-                    newvar.fix(fix_v)
-                    # print(newvar, 'is fixed at ', fix_v)
-            return m
-
-        return model
 
     def __solve_doe(self, m, fix=False, opt_option=None):
         '''Solve DOE model.
