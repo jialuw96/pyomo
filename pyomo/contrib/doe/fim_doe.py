@@ -1090,6 +1090,7 @@ class DesignOfExperiments:
 
         return model
 
+
     def __ef_fix_model(self, model, design_val):
         ''' Fix model design variables for square problem
         '''
