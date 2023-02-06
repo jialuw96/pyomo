@@ -282,6 +282,10 @@ class Scenario_data:
                 scenario.append(scenario_dict_up)
                 scenario.append(scenario_dict_up)
 
+            elif self.formula == "forward":
+                # TODO: add Forward formulation 
+                print("Todo")
+
             scena_p = {}
             for n in self.scena_keys:
                 scena_p[n] = self.scena[n][para]

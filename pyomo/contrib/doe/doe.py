@@ -89,6 +89,7 @@ class DesignOfExperiments:
 
         # create the measurement information object
         self.measure = measurement_object
+        self.measure_name = self.measure.measure_name
         self.flatten_measure_name = self.measure.flatten_measure_name
         self.flatten_variance = self.measure.flatten_variance
         self.flatten_measure_timeset = self.measure.flatten_measure_timeset
@@ -409,17 +410,21 @@ class DesignOfExperiments:
 
         # if measurements are not provided
         else:
+            scena_gen = Scenario_generator(self.param, formula=self.formula, step=self.step)
+            self.scenario_list = scena_gen["scenario"]
+            self.scenario_num = scena_gen["scena_num"]
             # dict for storing model outputs
             output_record = {}
 
             mod = pyo.ConcreteModel()
 
-            mod.scena = pyo.Set(initialize=list(range(2*len())))
+            mod.scena = pyo.Set(initialize=list(range(len(self.scenario_list))))
 
-            mod.t = pyo.ContinuousSet()
-            mod.t0 = pyo.Set()
-            mod.CA0 = pyo.Var()
-            mod.T = pyo.Var()
+            # Allow user to self-define complex design variables
+            mod.t = pyo.ContinuousSet(bounds=(0,1))
+            mod.t0 = pyo.Set(initialize=[0])
+            mod.CA0 = pyo.Var(m.t0, bounds=[1,5], within=pyo.NonNegativeReals)
+            mod.T = pyo.Var(m.t, bounds=[300, 700], within=pyo.NonNegativeReals)
 
             def block_build(b,s):
                 self.create_model(m=b)
@@ -429,51 +434,41 @@ class DesignOfExperiments:
                     par_strname.fix()
 
             mod.lsb = pyo.Block(mod.scena, rule=block_build)
-            
-            
 
-            # dict for storing Jacobian
-            models = []
-            time_allbuild = []
-            time_allsolve = []
+            # discretize the model        
+            if self.discretize_model:
+                mod = self.discretize_model(mod)
 
-                # solve model
-                time0_solve = time.time()
-                square_result = self._solve_doe(mod, fix=True)
-                time1_solve = time.time()
-                time_allsolve.append(time1_solve-time0_solve)
-                models.append(mod)
 
-                if extract_single_model:
-                    mod_name = store_output + str(no_s) + '.csv'
-                    dataframe = extract_single_model(mod, square_result)
-                    dataframe.to_csv(mod_name)
+            # solve model
+            square_result = self._solve_doe(mod, fix=True)
 
+            if extract_single_model:
+                mod_name = store_output + '.csv'
+                dataframe = extract_single_model(mod, square_result)
+                dataframe.to_csv(mod_name)
+
+            # loop over blocks for results
+            for s in range(len(self.scenario_list)):
                 # loop over measurement item and time to store model measurements
                 output_iter = []
 
-                for j in self.flatten_measure_name:
-                    for t in self.flatten_measure_timeset[j]:
-                        measure_string_name = self.measure.SP_measure_name(j,t,mode='sequential_finite')
-                        C_value = pyo.value(eval(measure_string_name))
-                        output_iter.append(C_value)
+                for r in self.measure_name:
+                    cuid = pyo.ComponentUID(r)
+                    var_up = cuid.find_component_on(mod.lsb[self.scenario_list[para][1]])
+                    output_iter.append(var_up)
 
-                output_record[no_s] = output_iter
+                output_record[s] = output_iter
 
-            output_record['design'] = self.design_values
-            if store_output:
-                f = open(store_output, 'wb')
-                pickle.dump(output_record, f)
-                f.close()
+                output_record['design'] = self.design_values
+                if store_output:
+                    f = open(store_output, 'wb')
+                    pickle.dump(output_record, f)
+                    f.close()
 
             # calculate jacobian
             jac = self._finite_calculation(output_record, scena_gen)
-
-            time11 = time.time()
-            self.logger.info('Build time with sequential_finite mode [s]:  %s', sum(time_allbuild))
-            self.logger.info('Solve time with sequential_finite mode [s]:  %s', sum(time_allsolve))
-            self.logger.info('Total wall clock time [s]:  %s', time11-time00)
-
+            
             # return all models formed
             self.models = models
 
