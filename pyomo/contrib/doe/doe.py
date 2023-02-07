@@ -434,7 +434,7 @@ class DesignOfExperiments:
                 
                 for par in self.param:
                     par_strname = eval('b.'+str(par))
-                    par_strname.fix()
+                    par_strname.fix(scena_gen["scenario"][s][par])
 
             mod.lsb = pyo.Block(mod.scena, rule=block_build)
 
@@ -472,7 +472,7 @@ class DesignOfExperiments:
                 for r in self.measure_name:
                     cuid = pyo.ComponentUID(r)
                     var_up = cuid.find_component_on(mod.lsb[s])
-                    output_iter.append(var_up)
+                    output_iter.append(pyo.value(var_up))
 
                 output_record[s] = output_iter
 
@@ -483,11 +483,17 @@ class DesignOfExperiments:
                     pickle.dump(output_record, f)
                     f.close()
 
+            print(output_record)
             # calculate jacobian
             jac = self._finite_calculation(output_record, scena_gen)
 
             # return all models formed
             self.model = mod
+
+            # Store the Jacobian information for access by users, not necessarily call result object to achieve jacobian information
+            # It is the overall set of Jacobian information, 
+            # while in the result object the jacobian can be cut to achieve part of the FIM information
+            self.jac = jac
 
         # Assemble and analyze results
         if self.specified_prior is None:
@@ -498,10 +504,7 @@ class DesignOfExperiments:
         FIM_analysis = FisherResults(list(self.param.keys()), self.measure, jacobian_info=None, all_jacobian_info=jac,
                                     prior_FIM=prior_in_use, store_FIM=self.FIM_store_name, scale_constant_value=self.scale_constant_value)
 
-        # Store the Jacobian information for access by users, not necessarily call result object to achieve jacobian information
-        # It is the overall set of Jacobian information, 
-        # while in the result object the jacobian can be cut to achieve part of the FIM information
-        self.jac = jac
+        
 
         return FIM_analysis
 
@@ -656,6 +659,7 @@ class DesignOfExperiments:
             s2 = involved_s[1] # loweer perturbation
             list_jac = []
             for i in range(len(output_record[s1])):
+                print("involved scenario index:", s1, s2)
                 sensi = (output_record[s1][i] - output_record[s2][i]) / scena_gen['eps-abs'][para] * self.scale_constant_value
                 if self.scale_nominal_param_value:
                     sensi *= self.param[para]

@@ -85,7 +85,7 @@ class FisherResults:
         self.logger.setLevel(level=logging.WARN)
 
 
-    def calculate_FIM(self, dv_values, result=None):
+    def calculate_FIM(self, dv_values, black_box_res=True, result=None):
         """Calculate FIM from Jacobian information. This is for grid search (combined models) results
 
         Parameters
@@ -101,13 +101,20 @@ class FisherResults:
         # get number of parameters
         no_param = len(self.para_name)
 
-        # reform jacobian, split the overall Q into Q_r, each r is a flattened measurement name
-        Q_response_list, variance_list = self._jac_reform_3D(self.jaco_information, Q_response=True)
+        if not black_box_res:
 
-        fim = np.zeros((no_param, no_param))
+            # reform jacobian, split the overall Q into Q_r, each r is a flattened measurement name
+            Q_response_list, variance_list = self._jac_reform_3D(self.jaco_information, Q_response=True)
 
-        for i in range(len(Q_response_list)):
-            fim += ((1/variance_list[i])*(Q_response_list[i]@Q_response_list[i].T))
+            fim = np.zeros((no_param, no_param))
+
+            for i in range(len(Q_response_list)):
+                fim += ((1/variance_list[i])*(Q_response_list[i]@Q_response_list[i].T))
+
+        else:
+            print(np.shape(self.jaco_information))
+            fim = np.zeros((no_param, no_param))
+
 
         # add prior information
         if (self.prior_FIM is not None):
