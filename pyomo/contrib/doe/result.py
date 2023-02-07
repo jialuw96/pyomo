@@ -112,9 +112,16 @@ class FisherResults:
                 fim += ((1/variance_list[i])*(Q_response_list[i]@Q_response_list[i].T))
 
         else:
-            print(np.shape(self.jaco_information))
             fim = np.zeros((no_param, no_param))
 
+            Q_all = []
+            
+            for par in self.para_name:
+                Q_all.append(self.jaco_information[par])
+
+            Q_all = np.asarray(Q_all)
+
+            fim = Q_all@Q_all.T 
 
         # add prior information
         if (self.prior_FIM is not None):

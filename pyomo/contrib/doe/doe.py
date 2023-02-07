@@ -423,11 +423,10 @@ class DesignOfExperiments:
             mod.scena = pyo.Set(initialize=list(range(len(self.scenario_list))))
 
             # Allow user to self-define complex design variables
-            mod.t = ContinuousSet(bounds=(0,1))
             mod.t0 = pyo.Set(initialize=[0])
             mod.t_con = pyo.Set(initialize=[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1])
             mod.CA0 = pyo.Var(mod.t0, bounds=[1,5], within=pyo.NonNegativeReals)
-            mod.T = pyo.Var(mod.t, bounds=[300, 700], within=pyo.NonNegativeReals)
+            mod.T = pyo.Var(mod.t_con, bounds=[300, 700], within=pyo.NonNegativeReals)
 
             def block_build(b,s):
                 self.create_model(m=b)
@@ -451,10 +450,6 @@ class DesignOfExperiments:
             
             mod.fix_con1 = pyo.Constraint(mod.scena, rule=fix_design1)
             mod.fix_con2 = pyo.Constraint(mod.scena, mod.t_con, rule=fix_design2)
-
-            #mod.CA0[0].fix(5)
-            #for t in [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]:
-            #    mod.T[t].fix(300)
 
             # solve model
             square_result = self._solve_doe(mod, fix=True)
@@ -482,8 +477,6 @@ class DesignOfExperiments:
                     f = open(store_output, 'wb')
                     pickle.dump(output_record, f)
                     f.close()
-
-            print(output_record)
             # calculate jacobian
             jac = self._finite_calculation(output_record, scena_gen)
 
@@ -659,7 +652,6 @@ class DesignOfExperiments:
             s2 = involved_s[1] # loweer perturbation
             list_jac = []
             for i in range(len(output_record[s1])):
-                print("involved scenario index:", s1, s2)
                 sensi = (output_record[s1][i] - output_record[s2][i]) / scena_gen['eps-abs'][para] * self.scale_constant_value
                 if self.scale_nominal_param_value:
                     sensi *= self.param[para]
