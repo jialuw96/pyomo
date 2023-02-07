@@ -32,7 +32,6 @@ from pyomo.common.dependencies import (
 
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
-from pyomo.dae import ContinuousSet
 import time
 import pickle
 from itertools import permutations, product
@@ -423,10 +422,15 @@ class DesignOfExperiments:
             mod.scena = pyo.Set(initialize=list(range(len(self.scenario_list))))
 
             # Allow user to self-define complex design variables
-            mod.t0 = pyo.Set(initialize=[0])
-            mod.t_con = pyo.Set(initialize=[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1])
-            mod.CA0 = pyo.Var(mod.t0, bounds=[1,5], within=pyo.NonNegativeReals)
-            mod.T = pyo.Var(mod.t_con, bounds=[300, 700], within=pyo.NonNegativeReals)
+            #mod.t0 = pyo.Set(initialize=[0])
+            #mod.t_con = pyo.Set(initialize=[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1])
+            #mod.CA0 = pyo.Var(mod.t0, bounds=[1,5], within=pyo.NonNegativeReals)
+            #mod.T = pyo.Var(mod.t_con, bounds=[300, 700], within=pyo.NonNegativeReals)
+
+            mod.add_component('t0', pyo.Set(initialize=[0]))
+            mod.add_component('t_con', pyo.Set(initialize=[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]))
+            mod.add_component('CA0', pyo.Var(mod.t0, bounds=[1,5], within=pyo.NonNegativeReals))
+            mod.add_component('T', pyo.Var(mod.t_con, bounds=[300, 700], within=pyo.NonNegativeReals))
 
             def block_build(b,s):
                 self.create_model(m=b)
