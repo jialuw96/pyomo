@@ -89,10 +89,10 @@ class DesignOfExperiments:
 
         # create the measurement information object
         self.measure = measurement_object
-        self.measure_name = self.measure.measure_name
-        self.flatten_measure_name = self.measure.flatten_measure_name
-        self.flatten_variance = self.measure.flatten_variance
-        self.flatten_measure_timeset = self.measure.flatten_measure_timeset
+        self.measure_name = self.measure.measurement_name
+        #self.flatten_measure_name = self.measure.flatten_measure_name
+        #self.flatten_variance = self.measure.flatten_variance
+        #self.flatten_measure_timeset = self.measure.flatten_measure_timeset
 
         # check if user-defined solver is given
         if solver:
@@ -399,7 +399,6 @@ class DesignOfExperiments:
             raise ValueError(self.mode+' is not a valid mode. Choose from "sequential_finite" and "direct_kaug".')
 
     def _sequential_finite(self, read_output, extract_single_model, store_output):
-        time00 = time.time()
 
         # if measurements are provided
         if read_output:
@@ -410,7 +409,9 @@ class DesignOfExperiments:
 
         # if measurements are not provided
         else:
-            scena_gen = Scenario_generator(self.param, formula=self.formula, step=self.step)
+            scena_object = Scenario_generator(self.param, formula=self.formula, step=self.step)
+            scena_gen = Scenario_generator.simultaneous_scenario()
+            print(scena_gen)
             self.scenario_list = scena_gen["scenario"]
             self.scenario_num = scena_gen["scena_num"]
             # dict for storing model outputs
@@ -448,7 +449,7 @@ class DesignOfExperiments:
             
             mod.fix_con1 = pyo.Constraint(mod.scena, rule=fix_design1)
             mod.fix_con2 = pyo.Constraint(mod.scena, mod.t, rule=fix_design2)
-            
+
             # solve model
             square_result = self._solve_doe(mod, fix=True)
 
@@ -479,7 +480,7 @@ class DesignOfExperiments:
             jac = self._finite_calculation(output_record, scena_gen)
 
             # return all models formed
-            self.models = models
+            self.model = mod
 
         # Assemble and analyze results
         if self.specified_prior is None:

@@ -61,7 +61,7 @@ class Measurements:
             a ''string'', used to flatten the name of variables and extra index. Default is '_index_'.
             For e.g., for {'C':{'CA': 10, 'CB': 1, 'CC': 2}}, the reformulated name is 'C_index_CA'.
         """
-        if not self_define_res:
+        if self_define_res:
             self.measurement_name = self_define_res
         else:
             if not measurement_index_time:
