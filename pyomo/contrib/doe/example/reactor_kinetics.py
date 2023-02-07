@@ -36,9 +36,8 @@ def disc_for_measure(m, NFE=32):
     """
     discretizer = pyo.TransformationFactory('dae.collocation')
     discretizer.apply_to(m, nfe=NFE, ncp=3, wrt=m.t)
-    for z in m.scena:
-        for t in m.t:
-            m.dCdt_rule[z,'CC',t].deactivate()
+    for s in range(8):
+        discretizer.apply_to(m.lsb[s], nfe=NFE, ncp=3, wrt=m.lsb[s].t)
     return m
 
 

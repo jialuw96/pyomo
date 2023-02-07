@@ -439,7 +439,16 @@ class DesignOfExperiments:
             if self.discretize_model:
                 mod = self.discretize_model(mod)
 
-
+            # force all design variables in blocks be the same as global design variables
+            def fix_design1(m,s):
+                return m.lsb[s].CA0[0]  == m.CA0[0]
+            
+            def fix_design2(m,s,t):
+                return m.lsb[s].T[t] == m.T[t]
+            
+            mod.fix_con1 = pyo.Constraint(mod.scena, rule=fix_design1)
+            mod.fix_con2 = pyo.Constraint(mod.scena, mod.t, rule=fix_design2)
+            
             # solve model
             square_result = self._solve_doe(mod, fix=True)
 
@@ -455,7 +464,7 @@ class DesignOfExperiments:
 
                 for r in self.measure_name:
                     cuid = pyo.ComponentUID(r)
-                    var_up = cuid.find_component_on(mod.lsb[self.scenario_list[para][1]])
+                    var_up = cuid.find_component_on(mod.lsb[s])
                     output_iter.append(var_up)
 
                 output_record[s] = output_iter
@@ -468,7 +477,7 @@ class DesignOfExperiments:
 
             # calculate jacobian
             jac = self._finite_calculation(output_record, scena_gen)
-            
+
             # return all models formed
             self.models = models
 
@@ -636,11 +645,11 @@ class DesignOfExperiments:
         # After collecting outputs from all scenarios, calculate sensitivity
         for para in list(self.param.keys()):
             # extract involved scenario No. for each parameter from scenario class
-            involved_s = scena_gen.scenario_para[para]
+            involved_s = scena_gen.scena_num[para]
 
             # each parameter has two involved scenarios
-            s1 = involved_s[0]
-            s2 = involved_s[1]
+            s1 = involved_s[0] # upper perturbation
+            s2 = involved_s[1] # loweer perturbation
             list_jac = []
             for i in range(len(output_record[s1])):
                 sensi = (output_record[s1][i] - output_record[s2][i]) / scena_gen.eps_abs[para] * self.scale_constant_value
