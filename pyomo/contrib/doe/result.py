@@ -66,8 +66,8 @@ class FisherResults:
         self.para_name = para_name
         self.measure_object = measure_object
         self.measurement_variables = measure_object.measurement_name
-        self.measurement_timeset = measure_object.flatten_measure_timeset
-        self.flatten_all_measure = measure_object.flatten_measure_name
+        #self.measurement_timeset = measure_object.flatten_measure_timeset
+        #self.flatten_all_measure = measure_object.flatten_measure_name
 
         if jacobian_info is None:
             self.jaco_information = all_jacobian_info

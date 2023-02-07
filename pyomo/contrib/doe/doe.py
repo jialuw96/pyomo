@@ -32,6 +32,7 @@ from pyomo.common.dependencies import (
 
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
+from pyomo.dae import ContinuousSet
 import time
 import pickle
 from itertools import permutations, product
@@ -410,7 +411,7 @@ class DesignOfExperiments:
         # if measurements are not provided
         else:
             scena_object = Scenario_generator(self.param, formula=self.formula, step=self.step)
-            scena_gen = Scenario_generator.simultaneous_scenario()
+            scena_gen = scena_object.simultaneous_scenario()
             print(scena_gen)
             self.scenario_list = scena_gen["scenario"]
             self.scenario_num = scena_gen["scena_num"]
@@ -422,16 +423,17 @@ class DesignOfExperiments:
             mod.scena = pyo.Set(initialize=list(range(len(self.scenario_list))))
 
             # Allow user to self-define complex design variables
-            mod.t = pyo.ContinuousSet(bounds=(0,1))
+            mod.t = ContinuousSet(bounds=(0,1))
             mod.t0 = pyo.Set(initialize=[0])
-            mod.CA0 = pyo.Var(m.t0, bounds=[1,5], within=pyo.NonNegativeReals)
-            mod.T = pyo.Var(m.t, bounds=[300, 700], within=pyo.NonNegativeReals)
+            mod.t_con = pyo.Set(initialize=[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1])
+            mod.CA0 = pyo.Var(mod.t0, bounds=[1,5], within=pyo.NonNegativeReals)
+            mod.T = pyo.Var(mod.t, bounds=[300, 700], within=pyo.NonNegativeReals)
 
             def block_build(b,s):
                 self.create_model(m=b)
                 
                 for par in self.param:
-                    par_strname = eval('b'+str(par))
+                    par_strname = eval('b.'+str(par))
                     par_strname.fix()
 
             mod.lsb = pyo.Block(mod.scena, rule=block_build)
@@ -448,7 +450,11 @@ class DesignOfExperiments:
                 return m.lsb[s].T[t] == m.T[t]
             
             mod.fix_con1 = pyo.Constraint(mod.scena, rule=fix_design1)
-            mod.fix_con2 = pyo.Constraint(mod.scena, mod.t, rule=fix_design2)
+            mod.fix_con2 = pyo.Constraint(mod.scena, mod.t_con, rule=fix_design2)
+
+            #mod.CA0[0].fix(5)
+            #for t in [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]:
+            #    mod.T[t].fix(300)
 
             # solve model
             square_result = self._solve_doe(mod, fix=True)
@@ -471,6 +477,7 @@ class DesignOfExperiments:
                 output_record[s] = output_iter
 
                 output_record['design'] = self.design_values
+                
                 if store_output:
                     f = open(store_output, 'wb')
                     pickle.dump(output_record, f)
@@ -495,10 +502,6 @@ class DesignOfExperiments:
         # It is the overall set of Jacobian information, 
         # while in the result object the jacobian can be cut to achieve part of the FIM information
         self.jac = jac
-
-        if read_output is None:
-            FIM_analysis.build_time = sum(time_allbuild)
-            FIM_analysis.solve_time = sum(time_allsolve)
 
         return FIM_analysis
 
@@ -646,14 +649,14 @@ class DesignOfExperiments:
         # After collecting outputs from all scenarios, calculate sensitivity
         for para in list(self.param.keys()):
             # extract involved scenario No. for each parameter from scenario class
-            involved_s = scena_gen.scena_num[para]
+            involved_s = scena_gen['scena_num'][para]
 
             # each parameter has two involved scenarios
             s1 = involved_s[0] # upper perturbation
             s2 = involved_s[1] # loweer perturbation
             list_jac = []
             for i in range(len(output_record[s1])):
-                sensi = (output_record[s1][i] - output_record[s2][i]) / scena_gen.eps_abs[para] * self.scale_constant_value
+                sensi = (output_record[s1][i] - output_record[s2][i]) / scena_gen['eps-abs'][para] * self.scale_constant_value
                 if self.scale_nominal_param_value:
                     sensi *= self.param[para]
                 list_jac.append(sensi)

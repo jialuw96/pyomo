@@ -279,8 +279,8 @@ class Scenario_data:
                 scena_dict_up[para] *= (1+self.step)
                 scena_dict_lo[para] *= (1-self.step)
 
-                scenario.append(scenario_dict_up)
-                scenario.append(scenario_dict_up)
+                scenario.append(scena_dict_up)
+                scenario.append(scena_dict_lo)
 
             elif self.formula == "forward":
                 # TODO: add Forward formulation 
