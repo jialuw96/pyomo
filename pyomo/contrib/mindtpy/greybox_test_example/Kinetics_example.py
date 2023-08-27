@@ -98,6 +98,10 @@ mip_option = False
 
 # All other options do not need to be changed
 objective = ObjectiveLib.D
+
+# if False. compute OF with equality constraints instead of grey-box module
+grey_box_option = False
+
 sparse_opt = True
 fix_opt = False
 
@@ -129,7 +133,8 @@ mod = calculator.continuous_optimization(mixed_integer=mip_option,
                     dynamic_install_initial = dynamic_install_init, 
                     static_dynamic_pair=static_dynamic,
                     time_interval_all_dynamic = time_interval_for_all,
-                    total_manual_num_init=total_manual_init)
+                    total_manual_num_init=total_manual_init, 
+                                        grey_box = grey_box_option)
 
 mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
 
