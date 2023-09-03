@@ -94,7 +94,7 @@ fim_prior = np.asarray([[  4.2421363 ,   2.0974022  , -7.15679971 , -8.94930454]
  [ -8.94930454 ,-21.02439003 , 12.5645852  , 86.54108698]])
 
 ### False means relaxed problem, True means mixed integer problem 
-mip_option = False
+mip_option = True
 
 # All other options do not need to be changed
 objective = ObjectiveLib.D
@@ -106,7 +106,7 @@ sparse_opt = True
 fix_opt = False
 
 manual_num = 10
-budget_opt = 1000
+budget_opt = 10000
 
 total_manual_init = 0
 dynamic_install_init = [0,0,0] 
@@ -136,7 +136,7 @@ mod = calculator.continuous_optimization(mixed_integer=mip_option,
                     total_manual_num_init=total_manual_init, 
                                         grey_box = grey_box_option)
 
-mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
+mod = calculator.solve(mod, mip_option=mip_option, objective = objective, grey_box = grey_box_option)
 
 
 fim_result = np.zeros((4,4))

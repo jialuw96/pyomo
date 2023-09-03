@@ -810,7 +810,7 @@ class MeasurementOptimizer:
         elif obj == ObjectiveLib.D:
 
             if grey_box:
-
+                print("Grey-box applied.")
                 def _model_i(b):
                     self.build_model_external(b, fim_init=fim_initial_dict)
                 m.my_block = pyo.Block(rule=_model_i)
@@ -827,6 +827,7 @@ class MeasurementOptimizer:
                 m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
 
             else:
+                print("Computing D-optimality...")
                 m.det = pyo.Var(initialize=0.0001, within=pyo.Reals)
                 def det_general(m):
                     """Calculate determinant. Can be applied to FIM of any size.
@@ -911,7 +912,7 @@ class MeasurementOptimizer:
 
         return FIM
     
-    def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
+    def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, grey_box=True, degeneracy_hunter=False):
         if not mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('ipopt')
             solver.options['linear_solver'] = "ma57"
@@ -928,14 +929,18 @@ class MeasurementOptimizer:
             solver.solve(mod, tee=True)
             
         elif objective==ObjectiveLib.D:  
-            solver = pyo.SolverFactory('cyipopt')
-            solver.config.options['hessian_approximation'] = 'limited-memory' 
-            additional_options={'max_iter':3000, 'output_file': 'console_output',
-                                'linear_solver':'mumps'}
-            
-            for k,v in additional_options.items():
-                solver.config.options[k] = v
-            solver.solve(mod, tee=True)
+            if grey_box:
+                solver = pyo.SolverFactory('cyipopt')
+                solver.config.options['hessian_approximation'] = 'limited-memory' 
+                additional_options={'max_iter':3000, 'output_file': 'console_output',
+                                    'linear_solver':'mumps'}
+                
+                for k,v in additional_options.items():
+                    solver.config.options[k] = v
+                solver.solve(mod, tee=True)
+            else:
+                solver = pyo.SolverFactory('gurobi', solver_io="python")
+                solver.solve(mod, tee=True)
             
         if degeneracy_hunter:
             return mod, dh
