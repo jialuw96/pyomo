@@ -8,7 +8,6 @@ import pyomo.environ as pyo
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
-from itertools import permutations, product
 #from idaes.core.util.model_diagnostics import DegeneracyHunter
 
 class CovarianceStructure(Enum): 
@@ -494,8 +493,7 @@ class MeasurementOptimizer:
                                 dynamic_install_initial = None,
                                 static_dynamic_pair=None,
                                 time_interval_all_dynamic=False, 
-                                total_manual_num_init=10, 
-                               grey_box=True):
+                                total_manual_num_init=10):
         
         """Continuous optimization problem formulation. 
 
@@ -574,9 +572,9 @@ class MeasurementOptimizer:
         # decision variables
         if mixed_integer:
             if upper_diagonal_only:
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, within=pyo.Binary)
             else:
-                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, within=pyo.Binary)
         else:
             if upper_diagonal_only:
                 m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(1E-6,1), within=pyo.Reals)
@@ -809,71 +807,20 @@ class MeasurementOptimizer:
 
         elif obj == ObjectiveLib.D:
 
-            if grey_box:
-                print("Grey-box applied.")
-                def _model_i(b):
-                    self.build_model_external(b, fim_init=fim_initial_dict)
-                m.my_block = pyo.Block(rule=_model_i)
-    
-                for i in range(self.n_parameters):
-                    for j in range(i, self.n_parameters):
-                        def eq_fim(m):
-                            return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
-                        
-                        con_name = "con"+str(i)+str(j)
-                        m.add_component(con_name, pyo.Constraint(expr=eq_fim))
-    
-                # add objective
-                m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
+            def _model_i(b):
+                self.build_model_external(b, fim_init=fim_initial_dict)
+            m.my_block = pyo.Block(rule=_model_i)
 
-            else:
-                print("Computing D-optimality...")
-                m.det = pyo.Var(initialize=0.0001, within=pyo.Reals)
-                def det_general(m):
-                    """Calculate determinant. Can be applied to FIM of any size.
-                    det(A) = sum_{\sigma \in \S_n} (sgn(\sigma) * \Prod_{i=1}^n a_{i,\sigma_i})
-                    Use permutation() to get permutations, sgn() to get signature
-                    """
-                    r_list = list(range(self.n_parameters))
-                    # get all permutations
-                    object_p = permutations(r_list)
-                    list_p = list(object_p)
+            for i in range(self.n_parameters):
+                for j in range(i, self.n_parameters):
+                    def eq_fim(m):
+                        return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
+                    
+                    con_name = "con"+str(i)+str(j)
+                    m.add_component(con_name, pyo.Constraint(expr=eq_fim))
 
-                    regression_parameters = ["A", "B", "C", "D"]
-
-                    convertor = {}
-                    for i in range(self.n_parameters):
-                        for j in range(self.n_parameters):
-                            if j>=i:
-                                convertor[(regression_parameters[i],regression_parameters[j])] = (i,j)
-                            else:
-                                convertor[(regression_parameters[i],regression_parameters[j])] = (j,i)
-
-                    # generate a name_order to iterate \sigma_i
-                    det_perm = 0
-                    for i in range(len(list_p)):
-                        name_order = []
-                        x_order = list_p[i]
-                        # sigma_i is the value in the i-th position after the reordering \sigma
-                        for x in range(len(x_order)):
-                            for y, element in enumerate(regression_parameters):
-                                if x_order[x] == y:
-                                    name_order.append(element)
-
-                    # det(A) = sum_{\sigma \in \S_n} (sgn(\sigma) * \Prod_{i=1}^n a_{i,\sigma_i})
-                    det_perm = sum(
-                        self._sgn(list_p[d])
-                        * sum(
-                            m.TotalFIM[convertor[(each,name_order[b])][0], convertor[(each,name_order[b])][1]]
-                            for b, each in enumerate(regression_parameters)
-                        )
-                        for d in range(len(list_p))
-                    )
-                    return m.det == det_perm
-                
-                # add objective
-                m.det_rule = pyo.Constraint(rule=det_general)
-                m.Obj = pyo.Objective(expr=m.det, sense=pyo.maximize)
+            # add objective
+            m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
 
         return m 
 
@@ -912,7 +859,7 @@ class MeasurementOptimizer:
 
         return FIM
     
-    def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, grey_box=True, degeneracy_hunter=False):
+    def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
         if not mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('ipopt')
             solver.options['linear_solver'] = "ma57"
@@ -928,19 +875,38 @@ class MeasurementOptimizer:
             #solver.options['mipgap'] = 0.1
             solver.solve(mod, tee=True)
             
-        elif objective==ObjectiveLib.D:  
-            if grey_box:
-                solver = pyo.SolverFactory('cyipopt')
-                solver.config.options['hessian_approximation'] = 'limited-memory' 
-                additional_options={'max_iter':3000, 'output_file': 'console_output',
-                                    'linear_solver':'mumps'}
-                
-                for k,v in additional_options.items():
-                    solver.config.options[k] = v
-                solver.solve(mod, tee=True)
-            else:
-                solver = pyo.SolverFactory('gurobi', solver_io="python")
-                solver.solve(mod, tee=True)
+        elif not mip_option and objective==ObjectiveLib.D:  
+            solver = pyo.SolverFactory('cyipopt')
+            solver.config.options['hessian_approximation'] = 'limited-memory' 
+            additional_options={'max_iter':3000, 'output_file': 'console_output',
+                                'linear_solver':'mumps'}
+            
+            for k,v in additional_options.items():
+                solver.config.options[k] = v
+            solver.solve(mod, tee=True)
+
+        elif mip_option and objective==ObjectiveLib.D:
+            solver = pyo.SolverFactory("mindtpy")
+
+            results = solver.solve(
+                mod, 
+                strategy="OA",  
+                init_strategy = "rNLP", 
+                mip_solver = "gurobi", 
+                nlp_solver = "cyipopt", 
+                calculate_dual_at_solution=True,
+                tee=True,
+                #add_no_good_cuts=True,
+                mip_solver_tee = True, 
+                nlp_solver_tee = True,
+                nlp_solver_args = {
+                    "options": {
+                        "hessian_approximation": "limited-memory", 
+                        'output_file': 'console_output',
+                        "linear_solver": "mumps",
+                    }
+                },
+            )
             
         if degeneracy_hunter:
             return mod, dh
@@ -1051,38 +1017,6 @@ class MeasurementOptimizer:
 
         return ans_y, sol_y
 
-
-    def _sgn(self, p):
-        """
-        This is a helper function for stochastic_program function to compute the determinant formula.
-        Give the signature of a permutation
-
-        Parameters
-        -----------
-        p: the permutation (a list)
-
-        Returns
-        -------
-        1 if the number of exchange is an even number
-        -1 if the number is an odd number
-        """
-
-        if len(p) == 1:
-            return 1
-
-        trans = 0
-
-        for i in range(0, len(p)):
-            j = i + 1
-
-            for j in range(j, len(p)):
-                if p[i] > p[j]:
-                    trans = trans + 1
-
-        if (trans % 2) == 0:
-            return 1
-        else:
-            return -1
 
 
                 
