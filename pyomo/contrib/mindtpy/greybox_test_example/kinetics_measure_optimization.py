@@ -18,7 +18,7 @@ all_ind = static_ind+dynamic_ind
 
 num_total = len(all_ind)
 
-all_names_strategy3 = ["CA.static", "CB.static", "CC.static", "CA.dynamic"]
+all_names_strategy3 = ["CA.static", "CB.static", "CC.static", "CB.dynamic"]
 
 #static_cost = [2000, # CA
 #    2000, # CB
@@ -51,7 +51,7 @@ measure_info = pd.DataFrame({
 dataObject = DataProcess()
 dataObject.read_jacobian('Q_drop0.csv')
 #Q = dataObject.get_Q_list([0,1,2], [0,1,2], Nt)
-Q = dataObject.get_Q_list([0,1,2], [0], Nt)
+Q = dataObject.get_Q_list([0,1,2], [1], Nt)
 
 
 calculator = MeasurementOptimizer(Q, measure_info, error_cov=error_cov, error_opt=CovarianceStructure.measure_correlation, verbose=True)
@@ -65,14 +65,10 @@ num_dynamic  = len(dynamic_ind)
 num_total = num_static + num_dynamic*Nt
 #num_total = num_static
 
-
-fim_prior = np.asarray([[1,0,0,0],
-[0,1,0,0],
-[0,0,1,0],
-[0,0,0,1]])
-
-#with open('May2_fim_3000_a', 'rb') as f:
-#    fim_prior = pickle.load(f)
+fim_prior = np.asarray([[  4.2421363  ,  2.0974022  , -7.15679971 , -8.94930454],
+ [  2.0974022  ,  5.18300713 , -2.8999988  ,-21.02439003],
+ [ -7.15679971 , -2.8999988 ,  12.34045591 , 12.5645852 ],
+ [ -8.94930454, -21.02439003  ,12.5645852  , 86.54108698]])
 
     
 mip_option = True
@@ -88,8 +84,7 @@ dynamic_install_init = [0,0,0]
 
 num_dynamic_time = np.linspace(0,60,9)
 
-#static_dynamic = [[0,3],[1,4],[2,5]]
-static_dynamic = [[0,3]]
+static_dynamic = [[1,3]]
 time_interval_for_all = True
 
 dynamic_time_dict = {}
