@@ -77,7 +77,7 @@ sparse_opt = True
 fix_opt = False
 
 manual_num = 10
-budget_opt = 2000
+budget_opt = 5000
 
 total_manual_init = 0
 dynamic_install_init = [0,0,0] 
@@ -105,7 +105,8 @@ mod = calculator.continuous_optimization(mixed_integer=mip_option,
                     dynamic_install_initial = dynamic_install_init, 
                     static_dynamic_pair=static_dynamic,
                     time_interval_all_dynamic = time_interval_for_all,
-                    total_manual_num_init=total_manual_init)
+                    total_manual_num_init=total_manual_init, 
+			FIM_diagonal_small_element = 0.0001)
 
 mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
 

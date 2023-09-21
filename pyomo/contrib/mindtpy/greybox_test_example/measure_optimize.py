@@ -493,7 +493,8 @@ class MeasurementOptimizer:
                                 dynamic_install_initial = None,
                                 static_dynamic_pair=None,
                                 time_interval_all_dynamic=False, 
-                                total_manual_num_init=10):
+                                total_manual_num_init=10, 
+                               FIM_diagonal_small_element=0):
         
         """Continuous optimization problem formulation. 
 
@@ -617,7 +618,11 @@ class MeasurementOptimizer:
                             summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
                             summi += m.cov_y[j,i]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
-                return m.TotalFIM[a,b] == summi
+                            
+                if a==b:
+                    return m.TotalFIM[a,b] == summi + FIM_diagonal_small_element
+                else:
+                    return m.TotalFIM[a,b] == summi
             else:
                 return m.TotalFIM[a,b] == m.TotalFIM[b,a]
             
