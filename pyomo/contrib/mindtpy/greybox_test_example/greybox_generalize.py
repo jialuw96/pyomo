@@ -26,8 +26,8 @@ class LogDetModel(ExternalGreyBoxModel):
         self.n_parameters = n_parameters
         self.num_input = int(n_parameters + (n_parameters*n_parameters-n_parameters)//2)
         self.initial_fim = initial_fim
-        print(initial_fim)
-        print("initialize with:", self.initial_fim)
+        #print(initial_fim)
+        #print("initialize with:", self.initial_fim)
         
         # For use with exact Hessian
         self._output_con_mult_values = np.zeros(1)
@@ -105,13 +105,15 @@ class LogDetModel(ExternalGreyBoxModel):
         # compute log determinant
         (sign, logdet) = np.linalg.slogdet(M)
 
-        if self.verbose:
-            print("\n Consider M =\n",M)
-            print(self._input_values)
-            print("   logdet = ",logdet,"\n")
-            print("Eigvals:", np.linalg.eigvals(M))
+        #if self.verbose:
+            #print("\n Consider M =\n",M)
+            #print(self._input_values)
+            #print("   logdet = ",logdet,"\n")
+            #print("Eigvals:", np.linalg.eigvals(M))
+            #print("iteration")
 
         return np.asarray([logdet], dtype=np.float64)
+        #return np.asarray([np.log(np.linalg.det(M))], dtype=np.float64)
 
     def evaluate_jacobian_equality_constraints(self):
         """Evaluate the Jacobian of the equality constraints."""

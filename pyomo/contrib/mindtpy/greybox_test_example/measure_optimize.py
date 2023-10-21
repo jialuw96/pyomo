@@ -578,7 +578,7 @@ class MeasurementOptimizer:
                 m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, within=pyo.Binary)
         else:
             if upper_diagonal_only:
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(1E-6,1), within=pyo.Reals)
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.Reals)
             else:
                 m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
         
@@ -866,14 +866,18 @@ class MeasurementOptimizer:
     
     def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
         if not mip_option and objective==ObjectiveLib.A:
-            solver = pyo.SolverFactory('ipopt')
-            solver.options['linear_solver'] = "ma57"
-            if degeneracy_hunter:
-                solver.options['max_iter'] = 0
-                solver.options['bound_push'] = 1E-6
+            #solver = pyo.SolverFactory('ipopt')
+            #solver.options['linear_solver'] = "ma57"
+            #if degeneracy_hunter:
+            #    solver.options['max_iter'] = 0
+            #    solver.options['bound_push'] = 1E-6
+            #solver.solve(mod, tee=True)
+            #if degeneracy_hunter:
+            #    dh = DegeneracyHunter(mod, solver=solver)
+                
+            solver = pyo.SolverFactory('gurobi', solver_io="python")
+            #solver.options['mipgap'] = 0.1
             solver.solve(mod, tee=True)
-            if degeneracy_hunter:
-                dh = DegeneracyHunter(mod, solver=solver)
 
         elif mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('gurobi', solver_io="python")
@@ -901,9 +905,11 @@ class MeasurementOptimizer:
                 nlp_solver = "cyipopt", 
                 calculate_dual_at_solution=True,
                 tee=True,
-                #add_no_good_cuts=True,
-                mip_solver_tee = True, 
-                nlp_solver_tee = True,
+                #NumericFocus=3,
+                add_no_good_cuts=True,
+                stalling_limit=1000,
+                #mip_solver_tee = True, 
+                #nlp_solver_tee = True,
                 nlp_solver_args = {
                     "options": {
                         "hessian_approximation": "limited-memory", 
