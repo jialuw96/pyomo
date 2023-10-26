@@ -532,6 +532,7 @@ class MeasurementOptimizer:
 
         # measurements set
         m.n_responses = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
+        m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
         # FIM set 
         m.DimFIM = pyo.Set(initialize=range(self.n_parameters))
 
