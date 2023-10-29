@@ -486,6 +486,7 @@ class MeasurementOptimizer:
         print('Cond:', max(eig)/min(eig))
 
     def continuous_optimization(self, mixed_integer=False, obj=ObjectiveLib.A, 
+                                mix_obj = False, alpha=1, fixed_nlp=False,
                                 fix=False, upper_diagonal_only=False,
                                 num_dynamic_t_name = None, 
                                 manual_number=20, budget=100, 
@@ -494,6 +495,7 @@ class MeasurementOptimizer:
                                 static_dynamic_pair=None,
                                 time_interval_all_dynamic=False, 
                                 total_manual_num_init=10, 
+                                cost_initial = 100, 
                                FIM_diagonal_small_element=0):
         
         """Continuous optimization problem formulation. 
@@ -533,9 +535,15 @@ class MeasurementOptimizer:
         # measurements set
         m.n_responses = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
         m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
+        m.n_static_measurements = self.n_static_measurements
+        m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
+        m.cost_list = self.cost_list
+        m.dynamic_install_cost = self.dynamic_install_cost
         # FIM set 
         m.DimFIM = pyo.Set(initialize=range(self.n_parameters))
-
+        
+        self.fixed_nlp= fixed_nlp
+        self.initial_fim = initial_fim
         # dynamic measurements parameters 
         # dynamic measurement number of timepoints 
         self.dynamic_Nt = self.Nt[self.n_static_measurements]
@@ -585,6 +593,9 @@ class MeasurementOptimizer:
         
         # use a fix option to compute results for square problems with given y 
         if fix:
+            m.cov_y.fix()
+            
+        if fixed_nlp:
             m.cov_y.fix()
 
         def init_fim(m,p,q):
@@ -723,14 +734,18 @@ class MeasurementOptimizer:
                 if dynamic_install_initial is None:
                     return 0
                 else:
-                    print(j)
-                    print(dynamic_install_initial)
                     return dynamic_install_initial[j-self.n_static_measurements]
 
             if mixed_integer:
                 m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1), within=pyo.Binary)
+    
             else:
                 m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1))
+                
+            if self.fixed_nlp:
+                m.if_install_dynamic.fix()
+                    
+                    
             m.dynamic_cost = pyo.Constraint(m.DimDynamic, m.DimDynamic_t, rule=dynamic_fix_yd)
             m.dynamic_con2 = pyo.Constraint(m.DimDynamic, rule=dynamic_fix_yd_con2)
 
@@ -782,7 +797,7 @@ class MeasurementOptimizer:
                         m.add_component(con_name, pyo.Constraint(expr=discretizer))
                 # if this constraint applies to each dynamic measurements, in a local way
                 else:
-                    for i in m.DimDynamic:
+                    for i in m.DimDynamicf:
                         for t in range(self.dynamic_Nt):
                             # end time is an open end of the region, so another constraint needs to be added to include end_time
                             #if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:       
@@ -803,7 +818,7 @@ class MeasurementOptimizer:
                             m.add_component(con_name, pyo.Constraint(expr=discretizer))
                         
             
-            m.cost = pyo.Var(initialize=budget)
+            m.cost = pyo.Var(initialize=cost_initial)
             m.cost_compute = pyo.Constraint(rule=cost_compute)
             m.budget_limit = pyo.Constraint(rule=cost_limit)
 
@@ -824,9 +839,27 @@ class MeasurementOptimizer:
                     
                     con_name = "con"+str(i)+str(j)
                     m.add_component(con_name, pyo.Constraint(expr=eq_fim))
-
+            
+            _, m.my_block.egb.outputs['log_det'] = np.linalg.slogdet(np.asarray(initial_fim))
+            
             # add objective
-            m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
+            if mix_obj: 
+                
+                #m.trace = pyo.Var(initialize=1,  within=pyo.Reals)
+                
+                #def compute_trace2(m):
+                #    return m.trace==sum(m.TotalFIM[j,j] for j in m.DimFIM)
+                #m.trace_con = pyo.Constraint(rule=compute_trace2)
+                
+                m.trace = pyo.Expression(rule=compute_trace(m))
+                
+                m.logdet = pyo.Expression(rule=m.my_block.egb.outputs['log_det'])
+                
+                m.Obj = pyo.Objective(expr=m.logdet+alpha*m.trace, sense=pyo.maximize)
+                
+            else:
+            
+                m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
 
         return m 
 
@@ -866,19 +899,34 @@ class MeasurementOptimizer:
         return FIM
     
     def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
-        if not mip_option and objective==ObjectiveLib.A:
-            #solver = pyo.SolverFactory('ipopt')
-            #solver.options['linear_solver'] = "ma57"
-            #if degeneracy_hunter:
-            #    solver.options['max_iter'] = 0
-            #    solver.options['bound_push'] = 1E-6
-            #solver.solve(mod, tee=True)
-            #if degeneracy_hunter:
-            #    dh = DegeneracyHunter(mod, solver=solver)
-                
-            solver = pyo.SolverFactory('gurobi', solver_io="python")
-            #solver.options['mipgap'] = 0.1
+        if self.fixed_nlp:
+            
+            solver = pyo.SolverFactory('cyipopt')
+            solver.config.options['hessian_approximation'] = 'limited-memory' 
+            additional_options={'max_iter':3000, 'output_file': 'console_output',
+                                    'linear_solver':'mumps', 
+                                    #"halt_on_ampl_error": "yes", 
+                                    "bound_push": 1E-10}
+            
+            if degeneracy_hunter:
+                additional_options={'max_iter':0, 'output_file': 'console_output',
+                                 'linear_solver':'mumps',  'bound_push':1E-10}
+
+            for k,v in additional_options.items():
+                solver.config.options[k] = v
             solver.solve(mod, tee=True)
+            
+            if degeneracy_hunter:
+                dh = DegeneracyHunter(mod, solver=solver)
+        
+        elif not mip_option and objective==ObjectiveLib.A:
+            solver = pyo.SolverFactory('ipopt')
+            solver.options['linear_solver'] = "ma57"
+            solver.solve(mod, tee=True)
+                
+            #solver = pyo.SolverFactory('gurobi', solver_io="python")
+            #solver.options['mipgap'] = 0.1
+            #solver.solve(mod, tee=True)
 
         elif mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('gurobi', solver_io="python")
@@ -890,12 +938,25 @@ class MeasurementOptimizer:
             solver.config.options['hessian_approximation'] = 'limited-memory' 
             additional_options={'max_iter':3000, 'output_file': 'console_output',
                                 'linear_solver':'mumps'}
+            #additional_options={'max_iter':30000, 'output_file': 'console_output',
+            #                        'linear_solver':'mumps', 
+            #                        "halt_on_ampl_error": True, 
+            #                        "bound_push": 1E-10}
             
+            if degeneracy_hunter:
+                additional_options={'max_iter':0, 'output_file': 'console_output',
+                                 'linear_solver':'mumps',  'bound_push':1E-6}
+
             for k,v in additional_options.items():
                 solver.config.options[k] = v
             solver.solve(mod, tee=True)
+            
+            if degeneracy_hunter:
+                dh = DegeneracyHunter(mod, solver=solver)
 
         elif mip_option and objective==ObjectiveLib.D:
+            
+            
             solver = pyo.SolverFactory("mindtpy")
 
             results = solver.solve(
@@ -909,13 +970,17 @@ class MeasurementOptimizer:
                 #NumericFocus=3,
                 add_no_good_cuts=True,
                 stalling_limit=1000,
+                iteration_limit=150,
                 #mip_solver_tee = True, 
-                #nlp_solver_tee = True,
+                nlp_solver_tee = True,
                 nlp_solver_args = {
                     "options": {
                         "hessian_approximation": "limited-memory", 
                         'output_file': 'console_output',
                         "linear_solver": "mumps",
+                        "max_iter": 30000,   
+                        #"halt_on_ampl_error": "yes", 
+                        "bound_push": 1E-8
                     }
                 },
             )
