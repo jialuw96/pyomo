@@ -97,12 +97,25 @@ def initialize(mod):
 
             return summi
             
-    mod.dynamic_initial_FIM = pyo.Expression(mod.DimFIM_half, rule=eval_fim2)
-        
     for a in mod.DimFIM:
         for b in mod.DimFIM:
             if a<b:
-                mod.TotalFIM[a,b] = mod.dynamic_initial_FIM[a,b]
+                dynamic_initial_element = eval_fim2(mod, a,b)
+                mod.TotalFIM[a,b] = dynamic_initial_element
+                
+    # manual and dynamic install initial 
+    def total_dynamic_exp(m):
+        return sum(m.cov_y[i,i] for i in range(m.n_static_measurements, m.num_measure_dynamic_flatten))
+        
+    total_dynamic_initial = total_dynamic_exp(mod)
+    mod.total_number_dynamic_measurements = total_dynamic_initial 
+      
+    ### cost constraints
+    def cost_compute(m):
+        return sum(m.cov_y[i,i]*m.cost_list[i] for i in m.n_responses)+sum(m.if_install_dynamic[j]*m.dynamic_install_cost[j-m.n_static_measurements] for j in m.DimDynamic)
+
+    cost_init = cost_compute(mod)
+    mod.cost = cost_init
                 
     return mod
 
