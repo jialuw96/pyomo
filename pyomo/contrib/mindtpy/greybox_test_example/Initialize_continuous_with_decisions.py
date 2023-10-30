@@ -80,9 +80,9 @@ def initialize(mod):
             for i in m.n_responses:
                 for j in m.n_responses:
                     if j>=i:
-                        summi += m.cov_y[i,j]*calculator.fim_collection[i*m.num_measure_dynamic_flatten+j][a][b]
+                        summi += m.cov_y[i,j]*unit_fim_list[i*m.num_measure_dynamic_flatten+j][a][b]
                     else:
-                        summi += m.cov_y[j,i]*calculator.fim_collection[i*m.num_measure_dynamic_flatten+j][a][b]
+                        summi += m.cov_y[j,i]*unit_fim_list[i*m.num_measure_dynamic_flatten+j][a][b]
 
 
             return summi
@@ -91,9 +91,9 @@ def initialize(mod):
             for i in m.n_responses:
                 for j in m.n_responses:
                     if j>=i:
-                        summi += m.cov_y[i,j]*calculator.fim_collection[i*m.num_measure_dynamic_flatten+j][b][a]
+                        summi += m.cov_y[i,j]*unit_fim_list[i*m.num_measure_dynamic_flatten+j][b][a]
                     else:
-                        summi += m.cov_y[j,i]*calculator.fim_collection[i*m.num_measure_dynamic_flatten+j][b][a]
+                        summi += m.cov_y[j,i]*unit_fim_list[i*m.num_measure_dynamic_flatten+j][b][a]
 
 
             return summi
