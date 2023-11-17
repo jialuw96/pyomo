@@ -39,6 +39,12 @@ from pyomo.contrib.sensitivity_toolbox.sens import get_dsdp
 from pyomo.contrib.doe.scenario import ScenarioGenerator, FiniteDifferenceStep
 from pyomo.contrib.doe.result import FisherResults, GridSearchResult
 
+from idaes.core.solvers.homotopy import homotopy
+from idaes.core.initialization.block_triangularization import (
+    BlockTriangularizationInitializer,
+)
+from RPB_model import *
+
 
 class CalculationMode(Enum):
     sequential_finite = "sequential_finite"
@@ -107,6 +113,8 @@ class DesignOfExperiments:
         self.design_vars = design_vars
         self.create_model = create_model
         self.args = args
+        
+        print("current version")
 
         # create the measurement information object
         self.measurement_vars = measurement_vars
@@ -479,14 +487,14 @@ class DesignOfExperiments:
             mod = self.discretize_model(mod, block=False)
 
         # add objective function
-        mod.Obj = pyo.Objective(expr=0, sense=pyo.minimize)
+        #mod.Obj = pyo.Objective(expr=0, sense=pyo.minimize)
 
         # set ub and lb to parameters
         for par in self.param.keys():
             cuid = pyo.ComponentUID(par)
             var = cuid.find_component_on(mod)
-            var.setlb(self.param[par])
-            var.setub(self.param[par])
+            #var.setlb(self.param[par])
+            #var.setub(self.param[par])
 
         # generate parameter name list and value dictionary with index
         var_name = list(self.param.keys())
@@ -1121,7 +1129,7 @@ class DesignOfExperiments:
         solver.options['max_iter'] = 3000
         return solver
 
-    def _solve_doe(self, m, fix=False, opt_option=None):
+    def _solve_doe(self, RPB, fix=False, opt_option=None):
         """Solve DOE model.
         If it's a square problem, fix design variable and solve.
         Else, fix design variable and solve square problem firstly, then unfix them and solve the optimization problem
@@ -1139,12 +1147,49 @@ class DesignOfExperiments:
         solver_results: solver results
         """
         ### Solve square problem
-        mod = self._fix_design(
-            m, self.design_values, fix_opt=fix, optimize_option=opt_option
+        RPB = self._fix_design(
+            RPB, self.design_values, fix_opt=fix, optimize_option=opt_option
         )
 
         # if user gives solver, use this solver. if not, use default IPOPT solver
-        solver_result = self.solver.solve(mod, tee=self.tee_opt)
+        #solver_result = self.solver.solve(mod, tee=self.tee_opt)
+
+        variables_list = [
+            RPB.ads.R_MT_gas,
+            RPB.des.R_MT_gas,
+            RPB.ads.R_MT_coeff,
+            RPB.des.R_MT_coeff,
+            RPB.ads.R_HT_ghx,
+            RPB.des.R_HT_ghx,
+            RPB.ads.R_HT_gs,
+            RPB.des.R_HT_gs,
+            RPB.ads.R_delH,
+            RPB.des.R_delH,
+        ]
+
+        
+        targets_list = [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+        ]
+        
+        solver_result = homotopy(
+        RPB,
+        variables_list,
+        targets_list,
+        max_solver_iterations=100,
+        max_solver_time=60,
+        min_step=0.01,
+        iter_target=8,)
+    
 
         return solver_result
 
