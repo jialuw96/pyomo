@@ -40,6 +40,7 @@ import math
 from itertools import permutations, product
 import numpy as np
 import pickle
+import os
 
 pyomo_nlp = attempt_import('pyomo.contrib.pynumero.interfaces.pyomo_nlp')[0]
 numpy = attempt_import('numpy')[0]
@@ -970,7 +971,7 @@ def generate_norm_constraint(fp_nlp_model, mip_model, config):
             fp_nlp_model.norm_constraint.add(nlp_var - mip_var.value <= rhs)
 
 def customized_initialize(mod):
-    with open("rotary_bed_unit_FIM", 'rb') as f:
+    with open(os.path.dirname(__file__)+"/rotary_bed_unit_FIM", 'rb') as f:
         unit_fim_list = pickle.load(f)
 
     # unit fim data
