@@ -184,7 +184,8 @@ def add_oa_cuts(
 def add_oa_cuts_for_grey_box(
     target_model, jacobians_model, config, objective_sense, mip_iter, cb_opt=None
 ):
-    sign_adjust = -1 if objective_sense == minimize else 1
+    sign_adjust = -1 if objective_sense==minimize else 1 
+    # sign_adjust = -1 if objective_sense == minimize else 1
     if config.add_slack:
         slack_var = target_model.MindtPy_utils.cuts.slack_vars.add()
     for target_model_grey_box, jacobian_model_grey_box in zip(
@@ -196,7 +197,6 @@ def add_oa_cuts_for_grey_box(
             .evaluate_jacobian_outputs()
             .toarray()
         )
-        # Enumerate over values works well now. However, it might be stable if the values() method changes.
         for index, output in enumerate(target_model_grey_box.outputs.values()):
             dual_value = jacobians_model.dual[jacobian_model_grey_box][
                 output.name.replace("outputs", "output_constraints")
@@ -210,8 +210,8 @@ def add_oa_cuts_for_grey_box(
                             target_model_grey_box.inputs.values()
                         )
                     )
-                )
                 - (output - value(output))
+                )
                 - (slack_var if config.add_slack else 0)
                 <= 0
             )
