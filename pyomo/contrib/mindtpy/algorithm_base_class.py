@@ -80,13 +80,12 @@ from pyomo.contrib.mindtpy.util import (
     set_solver_mipgap,
     set_solver_constraint_violation_tolerance,
     update_solver_timelimit,
+    customized_initialize
 )
 
 single_tree, single_tree_available = attempt_import('pyomo.contrib.mindtpy.single_tree')
 tabu_list, tabu_list_available = attempt_import('pyomo.contrib.mindtpy.tabu_list')
-egb, egb_available = attempt_import(
-    'pyomo.contrib.pynumero.interfaces.external_grey_box'
-)
+egb = attempt_import('pyomo.contrib.pynumero.interfaces.external_grey_box')[0]
 
 
 class _MindtPyAlgorithm(object):
@@ -143,8 +142,6 @@ class _MindtPyAlgorithm(object):
         self.last_iter_cuts = False
         # Store the OA cuts generated in the mip_start_process.
         self.mip_start_lazy_oa_cuts = []
-        # Whether to load solutions in solve() function
-        self.load_solutions = True
 
     # Support use as a context manager under current solver API
     def __enter__(self):
@@ -294,7 +291,7 @@ class _MindtPyAlgorithm(object):
                 results = self.mip_opt.solve(
                     self.original_model,
                     tee=config.mip_solver_tee,
-                    load_solutions=self.load_solutions,
+                    load_solutions=config.load_solutions,
                     **config.mip_solver_args,
                 )
                 if len(results.solution) > 0:
@@ -328,14 +325,11 @@ class _MindtPyAlgorithm(object):
                 ctype=Constraint, active=True, descend_into=(Block)
             )
         )
-        if egb_available:
-            util_block.grey_box_list = list(
-                model.component_data_objects(
-                    ctype=egb.ExternalGreyBoxBlock, active=True, descend_into=(Block)
-                )
+        util_block.grey_box_list = list(
+            model.component_data_objects(
+                ctype=egb.ExternalGreyBoxBlock, active=True, descend_into=(Block)
             )
-        else:
-            util_block.grey_box_list = []
+        )
         util_block.linear_constraint_list = list(
             c
             for c in util_block.constraint_list
@@ -363,20 +357,13 @@ class _MindtPyAlgorithm(object):
 
         # We use component_data_objects rather than list(var_set) in order to
         # preserve a deterministic ordering.
-        if egb_available:
-            util_block.variable_list = list(
-                v
-                for v in model.component_data_objects(
-                    ctype=Var, descend_into=(Block, egb.ExternalGreyBoxBlock)
-                )
-                if v in var_set
+        util_block.variable_list = list(
+            v
+            for v in model.component_data_objects(
+                ctype=Var, descend_into=(Block, egb.ExternalGreyBoxBlock)
             )
-        else:
-            util_block.variable_list = list(
-                v
-                for v in model.component_data_objects(ctype=Var, descend_into=(Block))
-                if v in var_set
-            )
+            if v in var_set
+        )
         util_block.discrete_variable_list = list(
             v for v in util_block.variable_list if v in var_set and v.is_integer()
         )
@@ -834,7 +821,7 @@ class _MindtPyAlgorithm(object):
             results = self.nlp_opt.solve(
                 self.rnlp,
                 tee=config.nlp_solver_tee,
-                load_solutions=self.load_solutions,
+                load_solutions=config.load_solutions,
                 **nlp_args,
             )
             if len(results.solution) > 0:
@@ -962,7 +949,10 @@ class _MindtPyAlgorithm(object):
         mip_args = dict(config.mip_solver_args)
         update_solver_timelimit(self.mip_opt, config.mip_solver, self.timing, config)
         results = self.mip_opt.solve(
-            m, tee=config.mip_solver_tee, load_solutions=self.load_solutions, **mip_args
+            m,
+            tee=config.mip_solver_tee,
+            load_solutions=config.load_solutions,
+            **mip_args,
         )
         if len(results.solution) > 0:
             m.solutions.load_from(results)
@@ -1025,7 +1015,15 @@ class _MindtPyAlgorithm(object):
         MindtPy = self.fixed_nlp.MindtPy_utils
         self.nlp_iter += 1
 
+        copy_var_list_values(
+            self.working_model.MindtPy_utils.variable_list,
+            MindtPy.variable_list,
+            config,
+            skip_fixed=True
+        )
+
         MindtPy.cuts.deactivate()
+        customized_initialize(self.fixed_nlp)
         if config.calculate_dual_at_solution:
             self.fixed_nlp.tmp_duals = ComponentMap()
             # tmp_duals are the value of the dual variables stored before using deactivate trivial constraints
@@ -1081,7 +1079,7 @@ class _MindtPyAlgorithm(object):
                 results = self.nlp_opt.solve(
                     self.fixed_nlp,
                     tee=config.nlp_solver_tee,
-                    load_solutions=self.load_solutions,
+                    load_solutions=config.load_solutions,
                     **nlp_args,
                 )
                 if len(results.solution) > 0:
@@ -1519,7 +1517,7 @@ class _MindtPyAlgorithm(object):
             main_mip_results = self.mip_opt.solve(
                 self.mip,
                 tee=config.mip_solver_tee,
-                load_solutions=self.load_solutions,
+                load_solutions=config.load_solutions,
                 **mip_args,
             )
             if len(main_mip_results.solution) > 0:
@@ -1602,16 +1600,32 @@ class _MindtPyAlgorithm(object):
         self.setup_main()
         mip_args = self.set_up_mip_solver()
 
-        try:
-            main_mip_results = self.mip_opt.solve(
-                self.mip,
-                tee=config.mip_solver_tee,
-                load_solutions=self.load_solutions,
-                **mip_args,
-            )
-            # update_attributes should be before load_from(main_mip_results), since load_from(main_mip_results) may fail.
-            if len(main_mip_results.solution) > 0:
-                self.mip.solutions.load_from(main_mip_results)
+        #try:
+        
+        main_mip_results = self.mip_opt.solve(
+            self.mip,
+            tee=config.mip_solver_tee,
+            load_solutions=config.load_solutions,
+            **mip_args,
+        )
+        #self.mip.MindtPy_utils.cuts.oa_cuts.pprint()
+        #raise ValueError
+        # update_attributes should be before load_from(main_mip_results), since load_from(main_mip_results) may fail.
+        #print("print mip:", self.mip)
+
+        if len(main_mip_results.solution) > 0:
+            self.mip.solutions.load_from(main_mip_results)
+
+        #print(main_mip_results)
+        print("======Print MIP solution======")
+        for a in self.mip.n_responses:
+            for b in self.mip.n_responses:
+                if b>=a:
+                    if self.mip.cov_y[a,b].value > 0.0001:
+                        print(a, b, self.mip.cov_y[a,b].value)
+
+        print("====end====")
+        '''
         except (ValueError, AttributeError, RuntimeError) as e:
             config.logger.error(e)
             if config.single_tree:
@@ -1627,6 +1641,7 @@ class _MindtPyAlgorithm(object):
                         'No integer solution is found, so the CPLEX solver will report an error status. '
                     )
             return None, None
+        '''
         if config.solution_pool:
             main_mip_results._solver_model = self.mip_opt._solver_model
             main_mip_results._pyomo_var_to_solver_var_map = (
@@ -1662,7 +1677,7 @@ class _MindtPyAlgorithm(object):
         main_mip_results = self.mip_opt.solve(
             self.mip,
             tee=config.mip_solver_tee,
-            load_solutions=self.load_solutions,
+            load_solutions=config.load_solutions,
             **mip_args,
         )
         # update_attributes should be before load_from(main_mip_results), since load_from(main_mip_results) may fail.
@@ -1705,7 +1720,7 @@ class _MindtPyAlgorithm(object):
         main_mip_results = self.regularization_mip_opt.solve(
             self.mip,
             tee=config.mip_solver_tee,
-            load_solutions=self.load_solutions,
+            load_solutions=config.load_solutions,
             **dict(config.mip_solver_args),
         )
         if len(main_mip_results.solution) > 0:
@@ -1917,7 +1932,7 @@ class _MindtPyAlgorithm(object):
             main_mip_results = self.mip_opt.solve(
                 main_mip,
                 tee=config.mip_solver_tee,
-                load_solutions=self.load_solutions,
+                load_solutions=config.load_solutions,
                 **config.mip_solver_args,
             )
             if len(main_mip_results.solution) > 0:
@@ -2255,7 +2270,7 @@ class _MindtPyAlgorithm(object):
                 and 'appsi' in config.mip_regularization_solver
             )
         ):
-            self.load_solutions = False
+            config.load_solutions = False
 
     ################################################################################################################################
     # Feasibility Pump
@@ -2322,7 +2337,7 @@ class _MindtPyAlgorithm(object):
                 results = self.nlp_opt.solve(
                     fp_nlp,
                     tee=config.nlp_solver_tee,
-                    load_solutions=self.load_solutions,
+                    load_solutions=config.load_solutions,
                     **nlp_args,
                 )
                 if len(results.solution) > 0:
