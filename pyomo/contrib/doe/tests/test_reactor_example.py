@@ -210,6 +210,7 @@ class Test_doe_object(unittest.TestCase):
             scale_nominal_param_value=True,
             objective_option="det",
             L_initial=np.linalg.cholesky(prior),
+            jac_initial = result.jaco_information
         )
 
         self.assertAlmostEqual(value(optimize_result.model.CA0[0]), 5.0, places=2)
